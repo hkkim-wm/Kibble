@@ -1,12 +1,14 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow
+
+from PyQt6.QtWidgets import QApplication
+
+from ui.main_window import MainWindow
 
 
 def main():
     app = QApplication(sys.argv)
-    window = QMainWindow()
-    window.setWindowTitle("Kibble")
-    window.resize(1200, 800)
+    app.setApplicationName("Kibble")
+    window = MainWindow()
     window.show()
     sys.exit(app.exec())
 
