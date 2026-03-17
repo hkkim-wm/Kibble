@@ -1,12 +1,12 @@
 import re
 from typing import List, Dict, Any, Optional
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal, QSize, QRectF
 from PyQt6.QtGui import QAction, QTextDocument, QPalette, QAbstractTextDocumentLayout
 from PyQt6.QtWidgets import (
     QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout,
     QRadioButton, QHBoxLayout, QButtonGroup, QComboBox, QApplication,
-    QCheckBox, QStyledItemDelegate, QStyleOptionViewItem,
+    QCheckBox, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
 )
 
 from ui.i18n import I18n
@@ -54,26 +54,24 @@ class HighlightDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
-        # Use QTextDocument to render HTML
         self.initStyleOption(option, index)
-
         painter.save()
 
+        # Draw background for selection
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+        else:
+            painter.fillRect(option.rect, option.palette.base())
+
+        # Render highlighted HTML
         doc = QTextDocument()
         html = self._make_highlighted_html(str(text))
         doc.setHtml(html)
         doc.setDefaultFont(option.font)
         doc.setTextWidth(option.rect.width())
 
-        # Draw background for selection
-        if option.state & QApplication.style().State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
-        else:
-            painter.fillRect(option.rect, option.palette.base())
-
         painter.translate(option.rect.topLeft())
-        clip = option.rect.translated(-option.rect.topLeft())
-        doc.drawContents(painter, clip)
+        doc.drawContents(painter, QRectF(0, 0, option.rect.width(), option.rect.height()))
 
         painter.restore()
 
