@@ -35,5 +35,5 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
-    icon=['assets/icon.ico'] if __import__('os').path.exists('assets/icon.ico') else [],
+    icon='assets/icon.ico',
 )
