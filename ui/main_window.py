@@ -166,10 +166,51 @@ class MainWindow(QMainWindow):
     def _on_hotkey_pressed(self):
         """Called from keyboard listener thread while source app still has focus."""
         import time as _time
-        # Send Ctrl+C NOW while the source app (Excel/LibreOffice) still has focus
-        keyboard.send("ctrl+c")
-        _time.sleep(0.15)  # Wait for clipboard to update
-        # Now signal Qt thread to read clipboard and search
+        import ctypes
+        from ctypes import wintypes
+
+        # Use SendInput to send Ctrl+C directly to the foreground app.
+        # keyboard.send() doesn't work here because the library intercepts
+        # its own keystrokes during hotkey processing.
+        INPUT_KEYBOARD = 1
+        KEYEVENTF_KEYUP = 0x0002
+        VK_CONTROL = 0x11
+        VK_C = 0x43
+
+        class KEYBDINPUT(ctypes.Structure):
+            _fields_ = [
+                ("wVk", wintypes.WORD),
+                ("wScan", wintypes.WORD),
+                ("dwFlags", wintypes.DWORD),
+                ("time", wintypes.DWORD),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+            ]
+
+        class INPUT(ctypes.Structure):
+            class _INPUT(ctypes.Union):
+                _fields_ = [("ki", KEYBDINPUT)]
+            _fields_ = [
+                ("type", wintypes.DWORD),
+                ("_input", _INPUT),
+            ]
+
+        def make_key_input(vk, flags=0):
+            inp = INPUT()
+            inp.type = INPUT_KEYBOARD
+            inp._input.ki.wVk = vk
+            inp._input.ki.dwFlags = flags
+            return inp
+
+        # Ctrl down, C down, C up, Ctrl up
+        inputs = (INPUT * 4)(
+            make_key_input(VK_CONTROL),
+            make_key_input(VK_C),
+            make_key_input(VK_C, KEYEVENTF_KEYUP),
+            make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+        )
+        ctypes.windll.user32.SendInput(4, inputs, ctypes.sizeof(INPUT))
+
+        _time.sleep(0.2)  # Wait for clipboard to update
         self._global_search_signal.emit("")
 
     def _on_global_search(self, _unused: str):
