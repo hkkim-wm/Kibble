@@ -358,6 +358,7 @@ class MainWindow(QMainWindow):
             limit=config["limit"],
             case_sensitive=config["case_sensitive"],
             wildcards=config["wildcards"],
+            ignore_spaces=config.get("ignore_spaces", False),
         )
 
         self._search_texts = texts
@@ -510,12 +511,27 @@ class MainWindow(QMainWindow):
         if current_file == "all":
             columns.append(self._i18n.t("meta_info"))
 
+        # Detect duplicate translations: same source text with different target translations
+        # Build a map of source -> set of target translations
+        from collections import defaultdict
+        source_translations: dict[str, set] = defaultdict(set)
+        for row in table_data:
+            src = row.get("source", "")
+            tgt = tuple(row.get(t, "") for t in visible_targets)
+            if src:
+                source_translations[src].add(tgt)
+        # Sources with more than one distinct translation set
+        dup_sources = {src for src, tgts in source_translations.items() if len(tgts) > 1}
+
         display_data = []
         for row in table_data:
             score = row.get("_score", 0)
+            src = row.get("source", "")
+            is_dup = src in dup_sources
             d = {
                 "_score": score,
-                "_score_num": score,  # Numeric for sorting
+                "_score_num": score,
+                "_is_dup": is_dup,
                 self._i18n.t("source_col"): row.get("source", ""),
             }
             for t in visible_targets:

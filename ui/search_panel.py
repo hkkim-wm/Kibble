@@ -42,6 +42,8 @@ class SearchPanel(QWidget):
         row2.addWidget(self._case_cb)
         self._wildcard_cb = QCheckBox(self._i18n.t("add_wildcards"))
         row2.addWidget(self._wildcard_cb)
+        self._ignore_spaces_cb = QCheckBox(self._i18n.t("ignore_spaces"))
+        row2.addWidget(self._ignore_spaces_cb)
         row2.addStretch()
         main_layout.addLayout(row2)
 
@@ -126,6 +128,7 @@ class SearchPanel(QWidget):
             "limit": self._limit_spin.value(),
             "case_sensitive": self._case_cb.isChecked(),
             "wildcards": self._wildcard_cb.isChecked(),
+            "ignore_spaces": self._ignore_spaces_cb.isChecked(),
             "direction": "source" if self._source_radio.isChecked() else "target",
             "filter_text": self._filter_box.text().strip(),
         })
@@ -177,6 +180,7 @@ class SearchPanel(QWidget):
         self._search_btn.setText(self._i18n.t("btn_search"))
         self._case_cb.setText(self._i18n.t("case_sensitive"))
         self._wildcard_cb.setText(self._i18n.t("add_wildcards"))
+        self._ignore_spaces_cb.setText(self._i18n.t("ignore_spaces"))
         self._source_radio.setText(self._i18n.t("search_in_source"))
         self._target_radio.setText(self._i18n.t("search_in_target"))
         self._mode_label.setText(self._i18n.t("match_mode") + ":")

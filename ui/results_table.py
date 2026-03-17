@@ -160,6 +160,9 @@ class ResultsTableModel(QAbstractTableModel):
             return 0
         return len(self._columns) + 1  # +1 for score column
 
+    # Custom role for duplicate flag
+    DuplicateRole = Qt.ItemDataRole.UserRole + 1
+
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
             return None
@@ -170,7 +173,9 @@ class ResultsTableModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.DisplayRole:
             if col == 0:
-                return self._results[row].get("_score", "")
+                score = self._results[row].get("_score", "")
+                is_dup = self._results[row].get("_is_dup", False)
+                return f"⚠{score}" if is_dup else score
             col_name = self._columns[col - 1] if col - 1 < len(self._columns) else ""
             return self._results[row].get(col_name, "")
 
@@ -180,6 +185,16 @@ class ResultsTableModel(QAbstractTableModel):
                 return self._results[row].get("_score_num", 0)
             col_name = self._columns[col - 1] if col - 1 < len(self._columns) else ""
             return self._results[row].get(col_name, "")
+
+        # Duplicate flag
+        if role == self.DuplicateRole:
+            return self._results[row].get("_is_dup", False)
+
+        # Background color for duplicate rows
+        if role == Qt.ItemDataRole.BackgroundRole:
+            if self._results[row].get("_is_dup", False):
+                from PyQt6.QtGui import QColor
+                return QColor("#FFCCBC")  # Light orange/red tint
 
         return None
 
@@ -310,7 +325,7 @@ class ResultsTableView(QWidget):
     def resize_score_column(self):
         """Make the % column narrow."""
         if self._model and self._model.columnCount() > 0:
-            self._table.setColumnWidth(0, 40)
+            self._table.setColumnWidth(0, 50)
 
     def set_highlight_queries(self, search_query: str = "", filter_query: str = "",
                               search_direction: str = "source"):

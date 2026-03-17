@@ -39,6 +39,8 @@ TRANSLATIONS = {
         "source_col": "Source (KO)",
         "meta_info": "Meta-info",
         "word_wrap": "Word wrap",
+        "ignore_spaces": "Ignore spaces",
+        "dup_translation": "⚠ Different translations found for same source",
         "global_hotkey": "Ctrl+C → Ctrl+Shift+K",
     },
     "ko": {
@@ -81,6 +83,8 @@ TRANSLATIONS = {
         "source_col": "원문 (KO)",
         "meta_info": "메타 정보",
         "word_wrap": "줄 바꿈",
+        "ignore_spaces": "공백 무시",
+        "dup_translation": "⚠ 동일 원문에 다른 번역이 존재합니다",
         "global_hotkey": "Ctrl+C → Ctrl+Shift+K",
     },
 }

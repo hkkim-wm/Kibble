@@ -15,6 +15,7 @@ class SearchConfig:
     limit: int  # max results
     case_sensitive: bool
     wildcards: bool
+    ignore_spaces: bool = False
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -80,21 +81,30 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
     texts_clean = texts.fillna("").astype(str)
     scores = np.zeros(n, dtype=np.float32)
 
+    # --- Whitespace normalization ---
+    # When ignore_spaces is on, strip all whitespace from both query and texts
+    # for matching purposes. Original texts are preserved for display.
+    if config.ignore_spaces:
+        texts_normalized = texts_clean.str.replace(r"\s+", "", regex=True)
+        query_normalized = re.sub(r"\s+", "", config.query)
+    else:
+        texts_normalized = texts_clean
+        query_normalized = config.query
+
     # --- Substring matching (vectorized with pandas) ---
     if config.mode in ("substring", "both"):
-        query = config.query
+        query = query_normalized
         case = config.case_sensitive
 
         if config.wildcards:
             # Build regex pattern from glob
             glob_q = query if "*" in query else f"*{query}*"
             regex_pat = _glob_to_regex(glob_q)
-            mask = texts_clean.str.contains(regex_pat, case=case, regex=True, na=False)
+            mask = texts_normalized.str.contains(regex_pat, case=case, regex=True, na=False)
             q_clean = query.replace("*", "")
             if q_clean:
-                matched_texts = texts_clean[mask]
+                matched_texts = texts_normalized[mask]
                 q_len = len(q_clean)
-                # Exact match = 100, otherwise 75 + 25 * ratio
                 q_lower = q_clean if case else q_clean.lower()
                 t_lower = matched_texts if case else matched_texts.str.lower()
                 is_exact = t_lower == q_lower
@@ -104,11 +114,11 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
                 scores[mask.values] = np.maximum(scores[mask.values], sub_scores)
         else:
             # Simple substring containment
-            mask = texts_clean.str.contains(
+            mask = texts_normalized.str.contains(
                 re.escape(query), case=case, regex=True, na=False
             )
             if mask.any():
-                matched_texts = texts_clean[mask]
+                matched_texts = texts_normalized[mask]
                 q_len = len(query)
                 q_compare = query if case else query.lower()
                 t_compare = matched_texts if case else matched_texts.str.lower()
@@ -120,9 +130,9 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
 
     # --- Fuzzy matching (RapidFuzz batch API) ---
     if config.mode in ("fuzzy", "both"):
-        texts_list = texts_clean.tolist()
+        texts_list = texts_normalized.tolist()
         fuzzy_results = process.extract(
-            config.query,
+            query_normalized,
             texts_list,
             scorer=fuzz.ratio,
             limit=None,
