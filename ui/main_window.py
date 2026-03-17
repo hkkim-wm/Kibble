@@ -59,18 +59,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        # Language toggle
-        title_bar = QHBoxLayout()
-        title_bar.addStretch()
-        self._lang_btn = QPushButton("EN | 한국어")
-        self._lang_btn.setFixedWidth(100)
-        self._lang_btn.clicked.connect(self._toggle_language)
-        title_bar.addWidget(self._lang_btn)
-        layout.addLayout(title_bar)
-
         # Search panel
         self._search_panel = SearchPanel(self._i18n)
         self._search_panel.search_requested.connect(self._on_search_requested)
+        self._search_panel.filter_changed.connect(self._render_table)
         layout.addWidget(self._search_panel)
 
         # File tabs
@@ -102,6 +94,10 @@ class MainWindow(QMainWindow):
 
         # Status bar
         status_bar = QStatusBar()
+        self._lang_btn = QPushButton("EN | 한국어")
+        self._lang_btn.setFixedWidth(100)
+        self._lang_btn.clicked.connect(self._toggle_language)
+        status_bar.addWidget(self._lang_btn)
         self._drop_hint = QLabel(f"\U0001F415 {self._i18n.t('drop_hint')}")
         status_bar.addWidget(self._drop_hint, stretch=1)
         self._status_info = QLabel(f"Kibble v{APP_VERSION}")
@@ -296,28 +292,9 @@ class MainWindow(QMainWindow):
     def _on_search_finished(self, results: list, total_hits: int, config: dict):
         entries = self._current_search_entries
         self._search_panel.set_total_hits(total_hits)
+        self._last_search_direction = config.get("direction", "source")
 
-        # Apply secondary filter
-        filter_text = config.get("filter_text", "").strip().lower()
-        if filter_text:
-            direction = config.get("direction", "source")
-            filtered = []
-            for r in results:
-                idx = r["index"]
-                if idx < len(entries):
-                    entry = entries[idx]
-                    if direction == "source":
-                        for key, val in entry.items():
-                            if key not in ("text", "index", "row_idx", "file_path", "source") and filter_text in str(val).lower():
-                                filtered.append(r)
-                                break
-                    else:
-                        if filter_text in entry.get("source", "").lower():
-                            filtered.append(r)
-            results = filtered
-            self._search_panel.set_total_hits(len(results))
-
-        # Build table data (cached for view mode switching)
+        # Build full table data (cached for filtering and view mode switching)
         table_data = []
         current_file = self._file_tabs.get_current_file()
         for r in results:
@@ -337,11 +314,34 @@ class MainWindow(QMainWindow):
         self._render_table()
 
     def _render_table(self):
-        """Render table data respecting current view mode."""
+        """Render table data respecting current view mode and filter."""
         table_data = getattr(self, "_last_table_data", [])
         current_file = getattr(self, "_last_current_file", "all")
         if not table_data:
+            self._table_model.clear()
             return
+
+        # Apply secondary filter from the filter box
+        filter_text = self._search_panel.get_filter_text().lower()
+        direction = getattr(self, "_last_search_direction", "source")
+        if filter_text:
+            filtered_data = []
+            for row in table_data:
+                if direction == "source":
+                    # Filter by target columns
+                    all_target_text = " ".join(
+                        str(v) for k, v in row.items()
+                        if k not in ("score", "source", "meta")
+                    ).lower()
+                    if filter_text in all_target_text:
+                        filtered_data.append(row)
+                else:
+                    # Filter by source
+                    if filter_text in row.get("source", "").lower():
+                        filtered_data.append(row)
+            table_data = filtered_data
+
+        self._search_panel.set_total_hits(len(table_data))
 
         view_mode = self._results_view.get_view_mode()
         all_targets = set()
@@ -350,13 +350,11 @@ class MainWindow(QMainWindow):
         sorted_targets = sorted(all_targets)
 
         if view_mode == "three_column":
-            # Show only one target language
             selected_lang = self._results_view.get_selected_target_language()
             if not selected_lang and sorted_targets:
                 selected_lang = sorted_targets[0]
             visible_targets = [selected_lang] if selected_lang and selected_lang in all_targets else sorted_targets[:1]
         else:
-            # Source + target: show all target columns
             visible_targets = sorted_targets
 
         columns = [self._i18n.t("source_col")]
@@ -366,7 +364,7 @@ class MainWindow(QMainWindow):
 
         display_data = []
         for row in table_data:
-            d = {"score": row["score"], self._i18n.t("source_col"): row.get("source", "")}
+            d = {self._i18n.t("source_col"): row.get("source", "")}
             for t in visible_targets:
                 d[t] = row.get(t, "")
             if current_file == "all":

@@ -12,6 +12,7 @@ class SearchPanel(QWidget):
     """Search controls panel: search box, options, filter, threshold."""
 
     search_requested = pyqtSignal(dict)
+    filter_changed = pyqtSignal()  # Emitted when filter text changes
 
     def __init__(self, i18n: I18n, parent=None):
         super().__init__(parent)
@@ -86,6 +87,7 @@ class SearchPanel(QWidget):
         self._filter_label = QLabel(self._i18n.t("filter_target"))
         row4.addWidget(self._filter_label)
         self._filter_box = QLineEdit()
+        self._filter_box.returnPressed.connect(lambda: self.filter_changed.emit())
         row4.addWidget(self._filter_box, stretch=1)
 
         self._limit_label = QLabel(self._i18n.t("limit") + ":")
@@ -127,6 +129,9 @@ class SearchPanel(QWidget):
             "direction": "source" if self._source_radio.isChecked() else "target",
             "filter_text": self._filter_box.text().strip(),
         })
+
+    def get_filter_text(self) -> str:
+        return self._filter_box.text().strip()
 
     def set_total_hits(self, count: int):
         self._hits_label.setText(f"{self._i18n.t('total_hits')}: {count}")

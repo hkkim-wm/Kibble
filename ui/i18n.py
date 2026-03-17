@@ -41,6 +41,7 @@ TRANSLATIONS = {
         "match_pct": "Match %",
         "source_col": "Source (KO)",
         "meta_info": "Meta-info",
+        "word_wrap": "Word wrap",
     },
     "ko": {
         "search_for": "검색어",
@@ -81,6 +82,7 @@ TRANSLATIONS = {
         "match_pct": "일치율",
         "source_col": "원문 (KO)",
         "meta_info": "메타 정보",
+        "word_wrap": "줄 바꿈",
     },
 }
 

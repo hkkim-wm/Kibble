@@ -5,6 +5,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout,
     QRadioButton, QHBoxLayout, QButtonGroup, QComboBox, QApplication,
+    QCheckBox, QAbstractItemView,
 )
 
 from ui.i18n import I18n
@@ -35,30 +36,24 @@ class ResultsTableModel(QAbstractTableModel):
         return len(self._results)
 
     def columnCount(self, parent=QModelIndex()) -> int:
-        if not self._columns:
-            return 0
-        return len(self._columns) + 1  # +1 for score column
+        return len(self._columns)
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
             return None
         row = index.row()
         col = index.column()
-        if row >= len(self._results):
+        if row >= len(self._results) or col >= len(self._columns):
             return None
-        if col == 0:
-            return self._results[row].get("score", 0)
-        col_name = self._columns[col - 1] if col - 1 < len(self._columns) else ""
+        col_name = self._columns[col]
         return self._results[row].get(col_name, "")
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
-            if section == 0:
-                return self._i18n.t("match_pct")
-            if section - 1 < len(self._columns):
-                return self._columns[section - 1]
+            if section < len(self._columns):
+                return self._columns[section]
         return None
 
     def get_row_data(self, row: int) -> Dict[str, Any]:
@@ -106,6 +101,11 @@ class ResultsTableView(QWidget):
         toggle_layout.addWidget(self._source_target_radio)
         layout.addLayout(toggle_layout)
 
+        # Word wrap checkbox
+        self._wrap_cb = QCheckBox(self._i18n.t("word_wrap"))
+        self._wrap_cb.toggled.connect(self._on_wrap_toggled)
+        toggle_layout.addWidget(self._wrap_cb)
+
         # Table view
         self._table = QTableView()
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
@@ -114,8 +114,11 @@ class ResultsTableView(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.doubleClicked.connect(self._on_double_click)
+        self._table.setWordWrap(False)
+        # Columns are user-resizable; stretch last section to fill
         self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.horizontalHeader().setDefaultSectionSize(200)
         layout.addWidget(self._table)
 
         # Connect view mode toggle and language selector
@@ -140,6 +143,15 @@ class ResultsTableView(QWidget):
         self._lang_combo.setVisible(button_id == 0)  # Show dropdown in three-column mode
         mode = "three_column" if button_id == 0 else "source_target"
         self.view_mode_changed.emit(mode)
+
+    def _on_wrap_toggled(self, checked: bool):
+        """Toggle word wrap in the table."""
+        self._table.setWordWrap(checked)
+        if checked:
+            self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        else:
+            self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+            self._table.verticalHeader().setDefaultSectionSize(30)
 
     def _on_lang_changed(self, index: int):
         """Re-emit view mode change when target language changes in three-column mode."""
@@ -219,3 +231,4 @@ class ResultsTableView(QWidget):
     def update_translations(self):
         self._three_col_radio.setText(self._i18n.t("three_col_view"))
         self._source_target_radio.setText(self._i18n.t("source_target_view"))
+        self._wrap_cb.setText(self._i18n.t("word_wrap"))
