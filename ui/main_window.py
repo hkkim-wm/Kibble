@@ -1,13 +1,12 @@
 import os
 import re
 import time
-import threading
 from typing import Dict, List, Any, Optional
 
 import keyboard
 import pandas as pd
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QShortcut, QKeySequence, QClipboard
+from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog, QStatusBar,
     QLabel, QHBoxLayout, QPushButton, QMessageBox, QApplication,
@@ -165,33 +164,21 @@ class MainWindow(QMainWindow):
             pass  # Silently fail if hotkey registration fails (e.g. no admin)
 
     def _on_hotkey_pressed(self):
-        """Called from keyboard listener thread — copy selection and emit signal."""
-        # Save current clipboard
-        import time as _time
+        """Called from keyboard listener thread — signal Qt thread to handle it."""
+        # Just emit a signal; clipboard reading happens on the Qt main thread
+        self._global_search_signal.emit("")
 
-        # Simulate Ctrl+C to copy the selection in the active application
+    def _on_global_search(self, _unused: str):
+        """Handle global hotkey — runs on Qt main thread where clipboard access is safe."""
+        # Simulate Ctrl+C by sending keystroke to copy selection
         keyboard.send("ctrl+c")
-        _time.sleep(0.15)  # Brief wait for clipboard to update
+        # Brief delay then read clipboard via Qt (safe on main thread)
+        QTimer.singleShot(200, self._read_clipboard_and_search)
 
-        # Read clipboard — must do via signal since we're in a background thread
-        try:
-            import ctypes
-            CF_UNICODETEXT = 13
-            ctypes.windll.user32.OpenClipboard(0)
-            handle = ctypes.windll.user32.GetClipboardData(CF_UNICODETEXT)
-            if handle:
-                ctypes.windll.kernel32.GlobalLock.restype = ctypes.c_wchar_p
-                text = ctypes.windll.kernel32.GlobalLock(handle)
-                if text:
-                    self._global_search_signal.emit(str(text))
-                ctypes.windll.kernel32.GlobalUnlock(handle)
-            ctypes.windll.user32.CloseClipboard()
-        except Exception:
-            pass
-
-    def _on_global_search(self, text: str):
-        """Handle global hotkey search — runs on Qt main thread."""
-        text = text.strip()
+    def _read_clipboard_and_search(self):
+        """Read clipboard via Qt and trigger search."""
+        clipboard = QApplication.clipboard()
+        text = (clipboard.text() or "").strip()
         if len(text) < 2:
             return
         # Bring window to foreground
