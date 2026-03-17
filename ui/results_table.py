@@ -1,14 +1,95 @@
+import re
 from typing import List, Dict, Any, Optional
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal, QSize
+from PyQt6.QtGui import QAction, QTextDocument, QPalette, QAbstractTextDocumentLayout
 from PyQt6.QtWidgets import (
     QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout,
     QRadioButton, QHBoxLayout, QButtonGroup, QComboBox, QApplication,
-    QCheckBox, QAbstractItemView,
+    QCheckBox, QStyledItemDelegate, QStyleOptionViewItem,
 )
 
 from ui.i18n import I18n
+
+
+class HighlightDelegate(QStyledItemDelegate):
+    """Delegate that highlights search query matches with yellow background in cells."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._query = ""
+        self._highlight_columns: set = set()  # Column indices to highlight
+
+    def set_query(self, query: str):
+        self._query = query
+
+    def set_highlight_columns(self, columns: set):
+        self._highlight_columns = columns
+
+    def _make_highlighted_html(self, text: str) -> str:
+        """Insert <mark> tags around query matches in text."""
+        if not self._query or not text:
+            return text
+        # Escape HTML entities in text first
+        escaped = (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        # Case-insensitive highlight
+        pattern = re.compile(re.escape(self._query), re.IGNORECASE)
+        highlighted = pattern.sub(
+            lambda m: f'<mark style="background-color:#FFEB3B;padding:0 1px">{m.group()}</mark>',
+            escaped,
+        )
+        return highlighted
+
+    def paint(self, painter, option, index):
+        if not self._query or index.column() not in self._highlight_columns:
+            super().paint(painter, option, index)
+            return
+
+        text = index.data(Qt.ItemDataRole.DisplayRole)
+        if not text:
+            super().paint(painter, option, index)
+            return
+
+        # Use QTextDocument to render HTML
+        self.initStyleOption(option, index)
+
+        painter.save()
+
+        doc = QTextDocument()
+        html = self._make_highlighted_html(str(text))
+        doc.setHtml(html)
+        doc.setDefaultFont(option.font)
+        doc.setTextWidth(option.rect.width())
+
+        # Draw background for selection
+        if option.state & QApplication.style().State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+        else:
+            painter.fillRect(option.rect, option.palette.base())
+
+        painter.translate(option.rect.topLeft())
+        clip = option.rect.translated(-option.rect.topLeft())
+        doc.drawContents(painter, clip)
+
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        if not self._query or index.column() not in self._highlight_columns:
+            return super().sizeHint(option, index)
+
+        text = index.data(Qt.ItemDataRole.DisplayRole)
+        if not text:
+            return super().sizeHint(option, index)
+
+        doc = QTextDocument()
+        doc.setHtml(self._make_highlighted_html(str(text)))
+        doc.setDefaultFont(option.font)
+        doc.setTextWidth(option.rect.width() if option.rect.width() > 0 else 200)
+        return QSize(int(doc.idealWidth()), int(doc.size().height()))
 
 
 class ResultsTableModel(QAbstractTableModel):
@@ -56,6 +137,9 @@ class ResultsTableModel(QAbstractTableModel):
                 return self._columns[section]
         return None
 
+    def get_columns(self) -> List[str]:
+        return list(self._columns)
+
     def get_row_data(self, row: int) -> Dict[str, Any]:
         if 0 <= row < len(self._results):
             return self._results[row]
@@ -99,12 +183,13 @@ class ResultsTableView(QWidget):
 
         toggle_layout.addStretch()
         toggle_layout.addWidget(self._source_target_radio)
-        layout.addLayout(toggle_layout)
 
         # Word wrap checkbox
         self._wrap_cb = QCheckBox(self._i18n.t("word_wrap"))
         self._wrap_cb.toggled.connect(self._on_wrap_toggled)
         toggle_layout.addWidget(self._wrap_cb)
+
+        layout.addLayout(toggle_layout)
 
         # Table view
         self._table = QTableView()
@@ -115,10 +200,14 @@ class ResultsTableView(QWidget):
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.doubleClicked.connect(self._on_double_click)
         self._table.setWordWrap(False)
-        # Columns are user-resizable; stretch last section to fill
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._table.horizontalHeader().setDefaultSectionSize(200)
+
+        # Highlight delegate
+        self._highlight_delegate = HighlightDelegate(self._table)
+        self._table.setItemDelegate(self._highlight_delegate)
+
         layout.addWidget(self._table)
 
         # Connect view mode toggle and language selector
@@ -137,15 +226,26 @@ class ResultsTableView(QWidget):
         if languages:
             self._lang_combo.setCurrentIndex(en_idx)
 
+    def set_highlight_query(self, query: str):
+        """Set the search query for highlighting in source and target columns."""
+        self._highlight_delegate.set_query(query)
+        # Determine which columns to highlight (all except meta-info)
+        if self._model:
+            columns = self._model.get_columns()
+            meta_name = self._i18n.t("meta_info")
+            highlight_cols = {i for i, c in enumerate(columns) if c != meta_name}
+            self._highlight_delegate.set_highlight_columns(highlight_cols)
+        # Force repaint
+        self._table.viewport().update()
+
     def _on_view_mode_changed(self, button_id: int, checked: bool):
         if not checked:
             return
-        self._lang_combo.setVisible(button_id == 0)  # Show dropdown in three-column mode
+        self._lang_combo.setVisible(button_id == 0)
         mode = "three_column" if button_id == 0 else "source_target"
         self.view_mode_changed.emit(mode)
 
     def _on_wrap_toggled(self, checked: bool):
-        """Toggle word wrap in the table."""
         self._table.setWordWrap(checked)
         if checked:
             self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
@@ -154,7 +254,6 @@ class ResultsTableView(QWidget):
             self._table.verticalHeader().setDefaultSectionSize(30)
 
     def _on_lang_changed(self, index: int):
-        """Re-emit view mode change when target language changes in three-column mode."""
         if self._three_col_radio.isChecked():
             self.view_mode_changed.emit("three_column")
 
@@ -216,7 +315,6 @@ class ResultsTableView(QWidget):
         self._copy_rows()
 
     def get_selected_target_language(self) -> str:
-        """Return the selected target language in three-column mode."""
         return self._lang_combo.currentText() if self._lang_combo.currentText() else ""
 
     def get_view_mode(self) -> str:

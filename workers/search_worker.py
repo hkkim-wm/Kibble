@@ -1,8 +1,9 @@
 from typing import List, Dict, Any
 
+import pandas as pd
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.search import search, SearchConfig
+from core.search import search_vectorized, SearchConfig
 
 
 class SearchWorker(QThread):
@@ -11,9 +12,9 @@ class SearchWorker(QThread):
     finished = pyqtSignal(list, int)  # results, total_hits
     cancelled = pyqtSignal()
 
-    def __init__(self, entries: List[Dict[str, Any]], config: SearchConfig, parent=None):
+    def __init__(self, texts: pd.Series, config: SearchConfig, parent=None):
         super().__init__(parent)
-        self._entries = entries
+        self._texts = texts
         self._config = config
         self._cancelled = False
 
@@ -21,10 +22,14 @@ class SearchWorker(QThread):
         if self._cancelled:
             self.cancelled.emit()
             return
-        results = search(self._entries, self._config)
+        result_df = search_vectorized(self._texts, self._config)
         if self._cancelled:
             self.cancelled.emit()
             return
+        results = [
+            {"index": int(row["index"]), "score": int(row["score"])}
+            for _, row in result_df.iterrows()
+        ]
         self.finished.emit(results, len(results))
 
     def cancel(self):

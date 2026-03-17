@@ -39,7 +39,14 @@ class MainWindow(QMainWindow):
         # Workers
         self._parse_workers: List[ParseWorker] = []
         self._search_worker: Optional[SearchWorker] = None
-        self._current_search_entries: List[Dict[str, Any]] = []
+
+        # Search state
+        self._search_texts: Optional[pd.Series] = None
+        self._search_entry_meta: List[Dict[str, Any]] = []
+        self._last_table_data: List[Dict[str, Any]] = []
+        self._last_current_file: str = "all"
+        self._last_search_direction: str = "source"
+        self._last_search_query: str = ""
 
         # Session
         exe_dir = os.path.dirname(os.path.abspath(__file__))
@@ -78,10 +85,6 @@ class MainWindow(QMainWindow):
         self._results_view.set_model(self._table_model)
         self._results_view.view_mode_changed.connect(self._on_view_mode_changed)
         layout.addWidget(self._results_view, stretch=1)
-
-        # Last search results cache for view mode switching
-        self._last_search_results: list = []
-        self._last_search_config: dict = {}
 
         # Toast notification
         self._toast = ToastNotification(central)
@@ -227,15 +230,32 @@ class MainWindow(QMainWindow):
 
     # --- Search ---
 
+    def _get_target_search_col(self, mapping: dict) -> str:
+        """Get the target column to search. Uses three-column selection if active."""
+        view_mode = self._results_view.get_view_mode()
+        if view_mode == "three_column":
+            selected = self._results_view.get_selected_target_language()
+            if selected and selected in mapping.get("targets", []):
+                return selected
+        # Fallback to first target
+        targets = mapping.get("targets", [])
+        return targets[0] if targets else ""
+
     def _on_search_requested(self, config: dict):
         if self._search_worker and self._search_worker.isRunning():
             self._search_worker.cancel()
             self._search_worker.wait(500)
 
-        entries = self._build_search_entries(
+        # Build flat text series + metadata for search
+        texts, meta = self._build_search_data(
             config["direction"],
             self._file_tabs.get_current_file(),
         )
+
+        if len(texts) == 0:
+            self._last_table_data = []
+            self._table_model.clear()
+            return
 
         search_config = SearchConfig(
             query=config["query"],
@@ -246,15 +266,25 @@ class MainWindow(QMainWindow):
             wildcards=config["wildcards"],
         )
 
-        self._current_search_entries = entries
-        self._search_worker = SearchWorker(entries, search_config)
+        self._search_texts = texts
+        self._search_entry_meta = meta
+        self._last_search_query = config["query"]
+        self._last_search_direction = config.get("direction", "source")
+
+        self._search_worker = SearchWorker(texts, search_config)
         self._search_worker.finished.connect(
             lambda results, count: self._on_search_finished(results, count, config)
         )
         self._search_worker.start()
 
-    def _build_search_entries(self, direction: str, file_filter: str) -> list:
-        entries = []
+    def _build_search_data(self, direction: str, file_filter: str):
+        """Build a pandas Series of search texts + list of metadata dicts.
+
+        Returns (texts: pd.Series, meta: list[dict])
+        """
+        all_texts = []
+        all_meta = []
+
         files = (
             self._loaded_files.items()
             if file_filter == "all"
@@ -265,43 +295,44 @@ class MainWindow(QMainWindow):
 
         for path, df in files:
             mapping = self._column_mappings.get(path, {})
+            source_col = mapping.get("source", df.columns[0])
+
             if direction == "source":
-                search_col = mapping.get("source", df.columns[0])
+                search_col = source_col
             else:
-                target_cols = mapping.get("targets", [df.columns[1] if len(df.columns) > 1 else df.columns[0]])
-                search_col = target_cols[0] if target_cols else df.columns[0]
+                search_col = self._get_target_search_col(mapping)
+                if not search_col or search_col not in df.columns:
+                    search_col = source_col
 
             for i in range(len(df)):
                 text = str(df.iloc[i].get(search_col, "")) if search_col in df.columns else ""
                 if not text or text == "nan":
                     continue
-                entry = {
-                    "text": text,
-                    "index": len(entries),
+                entry_meta = {
                     "row_idx": i,
                     "file_path": path,
-                    "source": str(df.iloc[i].get(mapping.get("source", df.columns[0]), "")),
+                    "source": str(df.iloc[i].get(source_col, "")),
                 }
                 for t_col in mapping.get("targets", []):
                     if t_col in df.columns:
-                        entry[t_col] = str(df.iloc[i].get(t_col, ""))
-                entries.append(entry)
+                        entry_meta[t_col] = str(df.iloc[i].get(t_col, ""))
+                all_texts.append(text)
+                all_meta.append(entry_meta)
 
-        return entries
+        return pd.Series(all_texts, dtype=str), all_meta
 
     def _on_search_finished(self, results: list, total_hits: int, config: dict):
-        entries = self._current_search_entries
+        meta = self._search_entry_meta
         self._search_panel.set_total_hits(total_hits)
-        self._last_search_direction = config.get("direction", "source")
 
-        # Build full table data (cached for filtering and view mode switching)
+        # Build full table data
         table_data = []
         current_file = self._file_tabs.get_current_file()
         for r in results:
             idx = r["index"]
-            if idx < len(entries):
-                entry = entries[idx]
-                row = {"score": r["score"], "source": entry.get("source", "")}
+            if idx < len(meta):
+                entry = meta[idx]
+                row = {"source": entry.get("source", "")}
                 mapping = self._column_mappings.get(entry["file_path"], {})
                 for t_col in mapping.get("targets", []):
                     row[t_col] = entry.get(t_col, "")
@@ -314,29 +345,28 @@ class MainWindow(QMainWindow):
         self._render_table()
 
     def _render_table(self):
-        """Render table data respecting current view mode and filter."""
-        table_data = getattr(self, "_last_table_data", [])
-        current_file = getattr(self, "_last_current_file", "all")
+        """Render table data respecting current view mode, filter, and highlighting."""
+        table_data = self._last_table_data
+        current_file = self._last_current_file
         if not table_data:
             self._table_model.clear()
+            self._search_panel.set_total_hits(0)
             return
 
-        # Apply secondary filter from the filter box
+        # Apply secondary filter
         filter_text = self._search_panel.get_filter_text().lower()
-        direction = getattr(self, "_last_search_direction", "source")
+        direction = self._last_search_direction
         if filter_text:
             filtered_data = []
             for row in table_data:
                 if direction == "source":
-                    # Filter by target columns
                     all_target_text = " ".join(
                         str(v) for k, v in row.items()
-                        if k not in ("score", "source", "meta")
+                        if k not in ("source", "meta")
                     ).lower()
                     if filter_text in all_target_text:
                         filtered_data.append(row)
                 else:
-                    # Filter by source
                     if filter_text in row.get("source", "").lower():
                         filtered_data.append(row)
             table_data = filtered_data
@@ -374,13 +404,14 @@ class MainWindow(QMainWindow):
             display_data.append(d)
 
         self._table_model.set_results(display_data, columns)
+        # Pass the search query to the view for highlighting
+        self._results_view.set_highlight_query(self._last_search_query)
 
     def _on_view_mode_changed(self, mode: str):
-        """Re-render table when view mode toggle changes."""
         self._render_table()
 
     def _on_tab_changed(self, file_path: str):
-        pass  # Search re-triggered by user
+        pass
 
     # --- Status ---
 
