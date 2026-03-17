@@ -73,6 +73,14 @@ class HighlightDelegate(QStyledItemDelegate):
             )
         return escaped
 
+    def _get_conflict_bg(self, index) -> 'QColor | None':
+        """Check if this cell is a conflicting translation cell via model BackgroundRole."""
+        bg = index.data(Qt.ItemDataRole.BackgroundRole)
+        if bg is not None:
+            from PyQt6.QtGui import QColor
+            return QColor(bg) if not isinstance(bg, QColor) else bg
+        return None
+
     def paint(self, painter, option, index):
         if not self._has_highlights() or index.column() not in self._highlight_columns:
             super().paint(painter, option, index)
@@ -104,8 +112,13 @@ class HighlightDelegate(QStyledItemDelegate):
         self.initStyleOption(option, index)
         painter.save()
 
+        # Check for conflict highlight (takes priority over target tint)
+        conflict_bg = self._get_conflict_bg(index)
+
         if option.state & QStyle.StateFlag.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
+        elif conflict_bg is not None:
+            painter.fillRect(option.rect, conflict_bg)
         elif is_target_cell and not has_substring_match:
             # Light tint for target cells without literal match
             from PyQt6.QtGui import QColor
@@ -160,8 +173,9 @@ class ResultsTableModel(QAbstractTableModel):
             return 0
         return len(self._columns) + 1  # +1 for score column
 
-    # Custom role for duplicate flag
+    # Custom roles
     DuplicateRole = Qt.ItemDataRole.UserRole + 1
+    DupLangsRole = Qt.ItemDataRole.UserRole + 2
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
@@ -190,11 +204,14 @@ class ResultsTableModel(QAbstractTableModel):
         if role == self.DuplicateRole:
             return self._results[row].get("_is_dup", False)
 
-        # Background color for duplicate rows
+        # Background color: only highlight the specific language cells with conflicts
         if role == Qt.ItemDataRole.BackgroundRole:
-            if self._results[row].get("_is_dup", False):
-                from PyQt6.QtGui import QColor
-                return QColor("#FFCCBC")  # Light orange/red tint
+            dup_langs = self._results[row].get("_dup_langs", set())
+            if dup_langs and col > 0:
+                col_name = self._columns[col - 1] if col - 1 < len(self._columns) else ""
+                if col_name in dup_langs:
+                    from PyQt6.QtGui import QColor
+                    return QColor("#FFCCBC")  # Light orange/red tint
 
         return None
 

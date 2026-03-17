@@ -42,6 +42,34 @@ TRANSLATIONS = {
         "ignore_spaces": "Ignore spaces",
         "dup_translation": "⚠ Different translations found for same source",
         "global_hotkey": "Ctrl+C → Ctrl+Shift+K",
+        "menu_file": "&File",
+        "menu_open": "&Open Files...",
+        "menu_exit": "E&xit",
+        "menu_help": "&Help",
+        "menu_about": "&About Kibble",
+        "about_title": "About Kibble",
+        "about_text": (
+            "<h2>Kibble v{version}</h2>"
+            "<p>Fast terminology search for Translation Memories and Terminology Bases.</p>"
+            "<h3>Supported Formats</h3>"
+            "<p>.xlsx, .csv, .txt (auto-detects delimiter and encoding)</p>"
+            "<h3>Keyboard Shortcuts</h3>"
+            "<table>"
+            "<tr><td><b>Ctrl+O</b></td><td>&nbsp;&nbsp;Open files</td></tr>"
+            "<tr><td><b>Ctrl+F</b></td><td>&nbsp;&nbsp;Focus search box</td></tr>"
+            "<tr><td><b>Ctrl+C</b></td><td>&nbsp;&nbsp;Copy selected cell</td></tr>"
+            "<tr><td><b>Ctrl+W</b></td><td>&nbsp;&nbsp;Close current file tab</td></tr>"
+            "<tr><td><b>Escape</b></td><td>&nbsp;&nbsp;Clear search</td></tr>"
+            "<tr><td><b>Ctrl+Shift+K</b></td><td>&nbsp;&nbsp;Global hotkey — search clipboard text from any app</td></tr>"
+            "</table>"
+            "<h3>Tips</h3>"
+            "<ul>"
+            "<li>Drag &amp; drop files directly onto the window</li>"
+            "<li>Double-click a cell to copy it to clipboard</li>"
+            "<li>Right-click for more copy options</li>"
+            "<li>Use the filter box to narrow results after searching</li>"
+            "</ul>"
+        ),
     },
     "ko": {
         "search_for": "검색어",
@@ -86,6 +114,34 @@ TRANSLATIONS = {
         "ignore_spaces": "공백 무시",
         "dup_translation": "⚠ 동일 원문에 다른 번역이 존재합니다",
         "global_hotkey": "Ctrl+C → Ctrl+Shift+K",
+        "menu_file": "파일(&F)",
+        "menu_open": "파일 열기(&O)...",
+        "menu_exit": "종료(&X)",
+        "menu_help": "도움말(&H)",
+        "menu_about": "Kibble 정보(&A)",
+        "about_title": "Kibble 정보",
+        "about_text": (
+            "<h2>Kibble v{version}</h2>"
+            "<p>번역 메모리(TM) 및 용어집(TB)을 위한 빠른 용어 검색 도구입니다.</p>"
+            "<h3>지원 형식</h3>"
+            "<p>.xlsx, .csv, .txt (구분자 및 인코딩 자동 감지)</p>"
+            "<h3>키보드 단축키</h3>"
+            "<table>"
+            "<tr><td><b>Ctrl+O</b></td><td>&nbsp;&nbsp;파일 열기</td></tr>"
+            "<tr><td><b>Ctrl+F</b></td><td>&nbsp;&nbsp;검색창 포커스</td></tr>"
+            "<tr><td><b>Ctrl+C</b></td><td>&nbsp;&nbsp;선택한 셀 복사</td></tr>"
+            "<tr><td><b>Ctrl+W</b></td><td>&nbsp;&nbsp;현재 파일 탭 닫기</td></tr>"
+            "<tr><td><b>Escape</b></td><td>&nbsp;&nbsp;검색 초기화</td></tr>"
+            "<tr><td><b>Ctrl+Shift+K</b></td><td>&nbsp;&nbsp;글로벌 단축키 — 클립보드 텍스트로 검색</td></tr>"
+            "</table>"
+            "<h3>팁</h3>"
+            "<ul>"
+            "<li>파일을 창에 직접 끌어다 놓을 수 있습니다</li>"
+            "<li>셀을 더블클릭하면 클립보드에 복사됩니다</li>"
+            "<li>마우스 오른쪽 버튼으로 추가 복사 옵션 사용</li>"
+            "<li>필터 상자를 사용하여 검색 결과를 좁힐 수 있습니다</li>"
+            "</ul>"
+        ),
     },
 }
 

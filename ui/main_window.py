@@ -6,13 +6,14 @@ from typing import Dict, List, Any, Optional
 import keyboard
 import pandas as pd
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PyQt6.QtGui import QShortcut, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog, QStatusBar,
     QLabel, QHBoxLayout, QPushButton, QMessageBox, QApplication,
+    QMenuBar,
 )
 
-from core.parser import detect_columns, check_entry_limit
+from core.parser import detect_columns, check_entry_limit, normalize_column_name, classify_column
 from core.search import SearchConfig
 from core.session import SessionManager
 from ui.i18n import I18n
@@ -24,7 +25,7 @@ from ui.column_mapper import ColumnMapperDialog
 from workers.parse_worker import ParseWorker
 from workers.search_worker import SearchWorker
 
-APP_VERSION = "1.0"
+APP_VERSION = "1.1"
 HANGUL_RE = re.compile(r"[\uAC00-\uD7AF]")
 
 # Dog fetch animation frames
@@ -88,6 +89,7 @@ class MainWindow(QMainWindow):
         self._session = SessionManager(primary_dir=exe_dir, fallback_dir=fallback)
 
         self._setup_ui()
+        self._setup_menu_bar()
         self._setup_shortcuts()
         self._setup_global_hotkey()
         self._try_restore_session()
@@ -148,6 +150,35 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(self._status_info)
         self.setStatusBar(status_bar)
 
+    def _setup_menu_bar(self):
+        menu_bar = self.menuBar()
+
+        # File menu
+        file_menu = menu_bar.addMenu(self._i18n.t("menu_file"))
+        self._open_action = QAction(self._i18n.t("menu_open"), self)
+        self._open_action.setShortcut("Ctrl+O")
+        self._open_action.triggered.connect(self._open_file_dialog)
+        file_menu.addAction(self._open_action)
+        file_menu.addSeparator()
+        self._exit_action = QAction(self._i18n.t("menu_exit"), self)
+        self._exit_action.triggered.connect(self.close)
+        file_menu.addAction(self._exit_action)
+        self._file_menu = file_menu
+
+        # Help menu
+        help_menu = menu_bar.addMenu(self._i18n.t("menu_help"))
+        self._about_action = QAction(self._i18n.t("menu_about"), self)
+        self._about_action.triggered.connect(self._show_about_dialog)
+        help_menu.addAction(self._about_action)
+        self._help_menu = help_menu
+
+    def _show_about_dialog(self):
+        QMessageBox.about(
+            self,
+            self._i18n.t("about_title"),
+            self._i18n.t("about_text", version=APP_VERSION),
+        )
+
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+F"), self, self._search_panel.focus_search)
         QShortcut(QKeySequence("Ctrl+O"), self, self._open_file_dialog)
@@ -202,6 +233,12 @@ class MainWindow(QMainWindow):
         self._results_view.update_translations()
         self._drop_hint.setText(f"\U0001F415 {self._i18n.t('drop_hint')}")
         self._hotkey_hint.setText(self._i18n.t("global_hotkey"))
+        # Menu bar
+        self._file_menu.setTitle(self._i18n.t("menu_file"))
+        self._open_action.setText(self._i18n.t("menu_open"))
+        self._exit_action.setText(self._i18n.t("menu_exit"))
+        self._help_menu.setTitle(self._i18n.t("menu_help"))
+        self._about_action.setText(self._i18n.t("menu_about"))
 
     # --- Search animation ---
 
@@ -261,24 +298,31 @@ class MainWindow(QMainWindow):
             return
 
         self._loaded_files[path] = df
-        self._column_mappings[path] = {"source": source, "targets": targets}
+        target_norm = {t: normalize_column_name(t) for t in targets}
+        self._column_mappings[path] = {
+            "source": source,
+            "targets": targets,
+            "target_norm": target_norm,
+        }
         self._total_entries += len(df)
 
         display_name = os.path.basename(path)
         self._file_tabs.add_file_tab(path, display_name)
         self._update_status()
 
-        all_targets = set()
-        for mapping in self._column_mappings.values():
-            all_targets.update(mapping["targets"])
-        self._results_view.set_target_languages(sorted(all_targets))
+        self._results_view.set_target_languages(self._get_ordered_targets())
 
         sample = " ".join(str(v) for v in df[source].head(5).dropna())
         if not HANGUL_RE.search(sample):
             dialog = ColumnMapperDialog(df, self._i18n, source, targets, parent=self)
             if dialog.exec():
                 new_source, new_targets = dialog.get_mapping()
-                self._column_mappings[path] = {"source": new_source, "targets": new_targets}
+                new_norm = {t: normalize_column_name(t) for t in new_targets}
+                self._column_mappings[path] = {
+                    "source": new_source,
+                    "targets": new_targets,
+                    "target_norm": new_norm,
+                }
 
     def _on_parse_error(self, path: str, message: str):
         self._toast.show_message(message)
@@ -323,23 +367,42 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec():
             source, targets = dialog.get_mapping()
-            self._column_mappings[current] = {"source": source, "targets": targets}
+            norm = {t: normalize_column_name(t) for t in targets}
+            self._column_mappings[current] = {
+                "source": source,
+                "targets": targets,
+                "target_norm": norm,
+            }
 
     # --- Search ---
 
     def _get_target_search_col(self, mapping: dict) -> str:
+        """Return the original column name to search in for target direction."""
+        target_norm = mapping.get("target_norm", {})
+        # Reverse map: normalized code → original column name
+        norm_to_orig = {v: k for k, v in target_norm.items()}
+
         view_mode = self._results_view.get_view_mode()
         if view_mode == "three_column":
             selected = self._results_view.get_selected_target_language()
-            if selected and selected in mapping.get("targets", []):
-                return selected
+            if selected:
+                # selected is a normalized code; find original column
+                if selected in norm_to_orig:
+                    return norm_to_orig[selected]
+                if selected in mapping.get("targets", []):
+                    return selected
         targets = mapping.get("targets", [])
         return targets[0] if targets else ""
 
     def _on_search_requested(self, config: dict):
-        if self._search_worker and self._search_worker.isRunning():
+        if self._search_worker:
             self._search_worker.cancel()
-            self._search_worker.wait(500)
+            try:
+                self._search_worker.finished.disconnect()
+            except TypeError:
+                pass
+            if self._search_worker.isRunning():
+                self._search_worker.wait(500)
 
         texts, meta_df = self._build_search_data(
             config["direction"],
@@ -380,7 +443,7 @@ class MainWindow(QMainWindow):
         frames = []
 
         files = (
-            self._loaded_files.items()
+            list(self._loaded_files.items())
             if file_filter == "all"
             else [(file_filter, self._loaded_files[file_filter])]
             if file_filter in self._loaded_files
@@ -398,19 +461,24 @@ class MainWindow(QMainWindow):
                 if not search_col or search_col not in df.columns:
                     search_col = source_col
 
-            # Build a sub-dataframe with all needed columns
-            cols_to_include = {"_search_text": search_col, "_source": source_col}
+            # Build a sub-dataframe with normalized column names
             target_cols = mapping.get("targets", [])
-            for t in target_cols:
-                if t in df.columns:
-                    cols_to_include[t] = t
+            target_norm = mapping.get("target_norm", {})
 
             sub = pd.DataFrame()
             sub["_search_text"] = df[search_col].fillna("").astype(str) if search_col in df.columns else ""
             sub["_source"] = df[source_col].fillna("").astype(str) if source_col in df.columns else ""
             for t in target_cols:
                 if t in df.columns:
-                    sub[t] = df[t].fillna("").astype(str)
+                    norm = target_norm.get(t, t)
+                    if norm in sub.columns:
+                        # Another column already mapped to this normalized name;
+                        # keep the first non-empty value
+                        existing = sub[norm]
+                        new_vals = df[t].fillna("").astype(str)
+                        sub[norm] = existing.where(existing != "", new_vals)
+                    else:
+                        sub[norm] = df[t].fillna("").astype(str)
             sub["_file_path"] = path
             sub["_file_name"] = os.path.basename(path)
 
@@ -422,12 +490,22 @@ class MainWindow(QMainWindow):
             return pd.Series(dtype=str), pd.DataFrame()
 
         meta_df = pd.concat(frames, ignore_index=True)
+        # Fill NaN from mismatched columns across different files
+        meta_df = meta_df.fillna("")
         texts = meta_df["_search_text"]
         return texts, meta_df
 
     def _on_search_finished(self, results: list, total_hits: int, config: dict):
         self._stop_search_animation()
 
+        try:
+            self._process_search_results(results, total_hits, config)
+        except Exception as e:
+            self._last_table_data = []
+            self._table_model.clear()
+            self._toast.show_message(f"Search error: {e}")
+
+    def _process_search_results(self, results: list, total_hits: int, config: dict):
         meta_df = self._search_meta_df
         if meta_df is None or meta_df.empty:
             self._last_table_data = []
@@ -451,13 +529,14 @@ class MainWindow(QMainWindow):
         scores = [r["score"] for r in results]
         table_data = []
         for i in range(len(matched)):
-            row = {"source": matched.iloc[i]["_source"], "_score": scores[i]}
+            row = {"source": str(matched.iloc[i]["_source"]), "_score": scores[i]}
             for col in matched.columns:
                 if col.startswith("_"):
                     continue
-                row[col] = matched.iloc[i][col]
+                val = matched.iloc[i][col]
+                row[col] = str(val) if val and str(val) != "nan" else ""
             if current_file == "all":
-                row["meta"] = matched.iloc[i]["_file_name"]
+                row["meta"] = str(matched.iloc[i]["_file_name"])
             table_data.append(row)
 
         self._last_table_data = table_data
@@ -493,18 +572,16 @@ class MainWindow(QMainWindow):
         self._search_panel.set_total_hits(len(table_data))
 
         view_mode = self._results_view.get_view_mode()
-        all_targets = set()
-        for mapping in self._column_mappings.values():
-            all_targets.update(mapping["targets"])
-        sorted_targets = sorted(all_targets)
+        ordered_targets = self._get_ordered_targets()
+        all_targets = set(ordered_targets)
 
         if view_mode == "three_column":
             selected_lang = self._results_view.get_selected_target_language()
-            if not selected_lang and sorted_targets:
-                selected_lang = sorted_targets[0]
-            visible_targets = [selected_lang] if selected_lang and selected_lang in all_targets else sorted_targets[:1]
+            if not selected_lang and ordered_targets:
+                selected_lang = ordered_targets[0]
+            visible_targets = [selected_lang] if selected_lang and selected_lang in all_targets else ordered_targets[:1]
         else:
-            visible_targets = sorted_targets
+            visible_targets = ordered_targets
 
         columns = [self._i18n.t("source_col")]
         columns.extend(visible_targets)
@@ -512,26 +589,37 @@ class MainWindow(QMainWindow):
             columns.append(self._i18n.t("meta_info"))
 
         # Detect duplicate translations: same source text with different target translations
-        # Build a map of source -> set of target translations
+        # Only compare actual language columns; ignore empty cells (from files missing that language)
         from collections import defaultdict
-        source_translations: dict[str, set] = defaultdict(set)
+        from core.parser import _LANG_CODES
+        lang_targets = [t for t in visible_targets if t in _LANG_CODES]
+
+        # Per-source, per-language: collect distinct non-empty translations
+        source_lang_vals: dict[str, dict[str, set]] = defaultdict(lambda: defaultdict(set))
         for row in table_data:
             src = row.get("source", "")
-            tgt = tuple(row.get(t, "") for t in visible_targets)
             if src:
-                source_translations[src].add(tgt)
-        # Sources with more than one distinct translation set
-        dup_sources = {src for src, tgts in source_translations.items() if len(tgts) > 1}
+                for t in lang_targets:
+                    val = row.get(t, "")
+                    if val:
+                        source_lang_vals[src][t].add(val)
+        # Build per-source set of languages that have conflicting translations
+        dup_source_langs: dict[str, set] = {}
+        for src, lang_dict in source_lang_vals.items():
+            conflict_langs = {lang for lang, vals in lang_dict.items() if len(vals) > 1}
+            if conflict_langs:
+                dup_source_langs[src] = conflict_langs
 
         display_data = []
         for row in table_data:
             score = row.get("_score", 0)
             src = row.get("source", "")
-            is_dup = src in dup_sources
+            conflict_langs = dup_source_langs.get(src, set())
             d = {
                 "_score": score,
                 "_score_num": score,
-                "_is_dup": is_dup,
+                "_is_dup": bool(conflict_langs),
+                "_dup_langs": conflict_langs,
                 self._i18n.t("source_col"): row.get("source", ""),
             }
             for t in visible_targets:
@@ -554,6 +642,25 @@ class MainWindow(QMainWindow):
 
     def _on_view_mode_changed(self, mode: str):
         self._render_table()
+
+    def _get_ordered_targets(self) -> list:
+        """Collect normalized target columns: file-order languages, then info, then metadata."""
+        seen = set()
+        langs, info, meta = [], [], []
+        for mapping in self._column_mappings.values():
+            target_norm = mapping.get("target_norm", {})
+            for t in mapping.get("targets", []):
+                norm = target_norm.get(t, t)
+                if norm not in seen:
+                    seen.add(norm)
+                    cls = classify_column(norm)
+                    if cls == 0:
+                        langs.append(norm)
+                    elif cls == 1:
+                        info.append(norm)
+                    else:
+                        meta.append(norm)
+        return langs + info + meta
 
     # --- Status ---
 
@@ -588,6 +695,12 @@ class MainWindow(QMainWindow):
     def _restore_session(self, session: dict):
         self._search_panel.restore_config(session)
         self._column_mappings = session.get("column_mappings", {})
+        # Rebuild normalized target mappings for sessions saved before this feature
+        for path, mapping in self._column_mappings.items():
+            if "target_norm" not in mapping:
+                mapping["target_norm"] = {
+                    t: normalize_column_name(t) for t in mapping.get("targets", [])
+                }
         valid_files = [f for f in session.get("last_files", []) if os.path.isfile(f)]
         missing = [f for f in session.get("last_files", []) if not os.path.isfile(f)]
         for f in missing:
