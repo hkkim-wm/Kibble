@@ -13,39 +13,58 @@ from ui.i18n import I18n
 
 
 class HighlightDelegate(QStyledItemDelegate):
-    """Delegate that highlights search query matches with yellow background in cells."""
+    """Delegate that highlights search terms in cells.
+
+    Supports two highlight queries:
+    - search_query: highlighted in the searched column (yellow)
+    - filter_query: highlighted in the filtered columns (light blue)
+    Both are highlighted in all non-meta columns for maximum visibility.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._query = ""
+        self._search_query = ""
+        self._filter_query = ""
         self._highlight_columns: set = set()  # Column indices to highlight
 
-    def set_query(self, query: str):
-        self._query = query
+    def set_queries(self, search_query: str = "", filter_query: str = ""):
+        self._search_query = search_query
+        self._filter_query = filter_query
 
     def set_highlight_columns(self, columns: set):
         self._highlight_columns = columns
 
+    def _has_highlights(self) -> bool:
+        return bool(self._search_query or self._filter_query)
+
     def _make_highlighted_html(self, text: str) -> str:
-        """Insert <mark> tags around query matches in text."""
-        if not self._query or not text:
+        """Insert highlight tags around matched terms in text."""
+        if not text:
             return text
-        # Escape HTML entities in text first
+        # Escape HTML entities
         escaped = (
             text.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        # Case-insensitive highlight
-        pattern = re.compile(re.escape(self._query), re.IGNORECASE)
-        highlighted = pattern.sub(
-            lambda m: f'<mark style="background-color:#FFEB3B;padding:0 1px">{m.group()}</mark>',
-            escaped,
-        )
-        return highlighted
+        # Apply search query highlight (yellow)
+        if self._search_query:
+            pattern = re.compile(re.escape(self._search_query), re.IGNORECASE)
+            escaped = pattern.sub(
+                lambda m: f'<span style="background-color:#FFEB3B;padding:0 1px">{m.group()}</span>',
+                escaped,
+            )
+        # Apply filter query highlight (light blue)
+        if self._filter_query:
+            pattern = re.compile(re.escape(self._filter_query), re.IGNORECASE)
+            escaped = pattern.sub(
+                lambda m: f'<span style="background-color:#81D4FA;padding:0 1px">{m.group()}</span>',
+                escaped,
+            )
+        return escaped
 
     def paint(self, painter, option, index):
-        if not self._query or index.column() not in self._highlight_columns:
+        if not self._has_highlights() or index.column() not in self._highlight_columns:
             super().paint(painter, option, index)
             return
 
@@ -54,18 +73,28 @@ class HighlightDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
+        # Check if any query actually matches this cell text
+        text_str = str(text)
+        text_lower = text_str.lower()
+        has_match = False
+        if self._search_query and self._search_query.lower() in text_lower:
+            has_match = True
+        if self._filter_query and self._filter_query.lower() in text_lower:
+            has_match = True
+        if not has_match:
+            super().paint(painter, option, index)
+            return
+
         self.initStyleOption(option, index)
         painter.save()
 
-        # Draw background for selection
         if option.state & QStyle.StateFlag.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
         else:
             painter.fillRect(option.rect, option.palette.base())
 
-        # Render highlighted HTML
         doc = QTextDocument()
-        html = self._make_highlighted_html(str(text))
+        html = self._make_highlighted_html(text_str)
         doc.setHtml(html)
         doc.setDefaultFont(option.font)
         doc.setTextWidth(option.rect.width())
@@ -74,20 +103,6 @@ class HighlightDelegate(QStyledItemDelegate):
         doc.drawContents(painter, QRectF(0, 0, option.rect.width(), option.rect.height()))
 
         painter.restore()
-
-    def sizeHint(self, option, index):
-        if not self._query or index.column() not in self._highlight_columns:
-            return super().sizeHint(option, index)
-
-        text = index.data(Qt.ItemDataRole.DisplayRole)
-        if not text:
-            return super().sizeHint(option, index)
-
-        doc = QTextDocument()
-        doc.setHtml(self._make_highlighted_html(str(text)))
-        doc.setDefaultFont(option.font)
-        doc.setTextWidth(option.rect.width() if option.rect.width() > 0 else 200)
-        return QSize(int(doc.idealWidth()), int(doc.size().height()))
 
 
 class ResultsTableModel(QAbstractTableModel):
@@ -224,16 +239,19 @@ class ResultsTableView(QWidget):
         if languages:
             self._lang_combo.setCurrentIndex(en_idx)
 
-    def set_highlight_query(self, query: str):
-        """Set the search query for highlighting in source and target columns."""
-        self._highlight_delegate.set_query(query)
-        # Determine which columns to highlight (all except meta-info)
+    def set_highlight_queries(self, search_query: str = "", filter_query: str = "",
+                              search_direction: str = "source"):
+        """Set highlight queries for source and target columns."""
+        self._highlight_delegate.set_queries(
+            search_query=search_query,
+            filter_query=filter_query,
+        )
+        # Highlight all columns except meta-info
         if self._model:
             columns = self._model.get_columns()
             meta_name = self._i18n.t("meta_info")
             highlight_cols = {i for i, c in enumerate(columns) if c != meta_name}
             self._highlight_delegate.set_highlight_columns(highlight_cols)
-        # Force repaint
         self._table.viewport().update()
 
     def _on_view_mode_changed(self, button_id: int, checked: bool):

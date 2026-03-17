@@ -1,9 +1,10 @@
 import os
 import re
+import time
 from typing import Dict, List, Any, Optional
 
 import pandas as pd
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QShortcut, QKeySequence
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog, QStatusBar,
@@ -25,6 +26,24 @@ from workers.search_worker import SearchWorker
 APP_VERSION = "1.0"
 HANGUL_RE = re.compile(r"[\uAC00-\uD7AF]")
 
+# Dog fetch animation frames
+DOG_FRAMES = [
+    "\U0001F415 \u2022        ",
+    "\U0001F415  \u2022       ",
+    "\U0001F415   \u2022      ",
+    "\U0001F415    \u2022     ",
+    "\U0001F415     \u2022    ",
+    "\U0001F415      \u2022   ",
+    "\U0001F415       \u2022  ",
+    "\U0001F415        \u2022 ",
+    "\U0001F415       \u2022  ",
+    "\U0001F415      \u2022   ",
+    "\U0001F415     \u2022    ",
+    "\U0001F415    \u2022     ",
+    "\U0001F415   \u2022      ",
+    "\U0001F415  \u2022       ",
+]
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -42,11 +61,19 @@ class MainWindow(QMainWindow):
 
         # Search state
         self._search_texts: Optional[pd.Series] = None
-        self._search_entry_meta: List[Dict[str, Any]] = []
+        self._search_meta_df: Optional[pd.DataFrame] = None
         self._last_table_data: List[Dict[str, Any]] = []
         self._last_current_file: str = "all"
         self._last_search_direction: str = "source"
         self._last_search_query: str = ""
+        self._last_filter_text: str = ""
+
+        # Search animation state
+        self._search_start_time: float = 0
+        self._anim_frame: int = 0
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(150)
+        self._anim_timer.timeout.connect(self._update_search_animation)
 
         # Session
         exe_dir = os.path.dirname(os.path.abspath(__file__))
@@ -103,6 +130,10 @@ class MainWindow(QMainWindow):
         status_bar.addWidget(self._lang_btn)
         self._drop_hint = QLabel(f"\U0001F415 {self._i18n.t('drop_hint')}")
         status_bar.addWidget(self._drop_hint, stretch=1)
+        # Search animation label (hidden by default)
+        self._search_anim_label = QLabel("")
+        self._search_anim_label.setVisible(False)
+        status_bar.addWidget(self._search_anim_label)
         self._status_info = QLabel(f"Kibble v{APP_VERSION}")
         status_bar.addPermanentWidget(self._status_info)
         self.setStatusBar(status_bar)
@@ -124,6 +155,27 @@ class MainWindow(QMainWindow):
         self._file_tabs.update_translations()
         self._results_view.update_translations()
         self._drop_hint.setText(f"\U0001F415 {self._i18n.t('drop_hint')}")
+
+    # --- Search animation ---
+
+    def _start_search_animation(self):
+        self._search_start_time = time.time()
+        self._anim_frame = 0
+        self._search_anim_label.setVisible(True)
+        self._search_anim_label.setText(DOG_FRAMES[0] + " 0.0s")
+        self._anim_timer.start()
+
+    def _update_search_animation(self):
+        elapsed = time.time() - self._search_start_time
+        self._anim_frame = (self._anim_frame + 1) % len(DOG_FRAMES)
+        self._search_anim_label.setText(f"{DOG_FRAMES[self._anim_frame]} {elapsed:.1f}s")
+
+    def _stop_search_animation(self):
+        self._anim_timer.stop()
+        elapsed = time.time() - self._search_start_time
+        self._search_anim_label.setText(f"\U0001F415 \u2714 {elapsed:.2f}s")
+        # Hide after 3 seconds
+        QTimer.singleShot(3000, lambda: self._search_anim_label.setVisible(False))
 
     # --- File loading ---
 
@@ -169,13 +221,11 @@ class MainWindow(QMainWindow):
         self._file_tabs.add_file_tab(path, display_name)
         self._update_status()
 
-        # Update target language list in results view
         all_targets = set()
         for mapping in self._column_mappings.values():
             all_targets.update(mapping["targets"])
         self._results_view.set_target_languages(sorted(all_targets))
 
-        # Auto-open column mapper if no Korean detected (low confidence)
         sample = " ".join(str(v) for v in df[source].head(5).dropna())
         if not HANGUL_RE.search(sample):
             dialog = ColumnMapperDialog(df, self._i18n, source, targets, parent=self)
@@ -231,13 +281,11 @@ class MainWindow(QMainWindow):
     # --- Search ---
 
     def _get_target_search_col(self, mapping: dict) -> str:
-        """Get the target column to search. Uses three-column selection if active."""
         view_mode = self._results_view.get_view_mode()
         if view_mode == "three_column":
             selected = self._results_view.get_selected_target_language()
             if selected and selected in mapping.get("targets", []):
                 return selected
-        # Fallback to first target
         targets = mapping.get("targets", [])
         return targets[0] if targets else ""
 
@@ -246,8 +294,7 @@ class MainWindow(QMainWindow):
             self._search_worker.cancel()
             self._search_worker.wait(500)
 
-        # Build flat text series + metadata for search
-        texts, meta = self._build_search_data(
+        texts, meta_df = self._build_search_data(
             config["direction"],
             self._file_tabs.get_current_file(),
         )
@@ -267,9 +314,12 @@ class MainWindow(QMainWindow):
         )
 
         self._search_texts = texts
-        self._search_entry_meta = meta
+        self._search_meta_df = meta_df
         self._last_search_query = config["query"]
+        self._last_filter_text = config.get("filter_text", "")
         self._last_search_direction = config.get("direction", "source")
+
+        self._start_search_animation()
 
         self._search_worker = SearchWorker(texts, search_config)
         self._search_worker.finished.connect(
@@ -278,12 +328,8 @@ class MainWindow(QMainWindow):
         self._search_worker.start()
 
     def _build_search_data(self, direction: str, file_filter: str):
-        """Build a pandas Series of search texts + list of metadata dicts.
-
-        Returns (texts: pd.Series, meta: list[dict])
-        """
-        all_texts = []
-        all_meta = []
+        """Build search texts (pd.Series) and metadata (pd.DataFrame) — fully vectorized."""
+        frames = []
 
         files = (
             self._loaded_files.items()
@@ -304,48 +350,72 @@ class MainWindow(QMainWindow):
                 if not search_col or search_col not in df.columns:
                     search_col = source_col
 
-            for i in range(len(df)):
-                text = str(df.iloc[i].get(search_col, "")) if search_col in df.columns else ""
-                if not text or text == "nan":
-                    continue
-                entry_meta = {
-                    "row_idx": i,
-                    "file_path": path,
-                    "source": str(df.iloc[i].get(source_col, "")),
-                }
-                for t_col in mapping.get("targets", []):
-                    if t_col in df.columns:
-                        entry_meta[t_col] = str(df.iloc[i].get(t_col, ""))
-                all_texts.append(text)
-                all_meta.append(entry_meta)
+            # Build a sub-dataframe with all needed columns
+            cols_to_include = {"_search_text": search_col, "_source": source_col}
+            target_cols = mapping.get("targets", [])
+            for t in target_cols:
+                if t in df.columns:
+                    cols_to_include[t] = t
 
-        return pd.Series(all_texts, dtype=str), all_meta
+            sub = pd.DataFrame()
+            sub["_search_text"] = df[search_col].fillna("").astype(str) if search_col in df.columns else ""
+            sub["_source"] = df[source_col].fillna("").astype(str) if source_col in df.columns else ""
+            for t in target_cols:
+                if t in df.columns:
+                    sub[t] = df[t].fillna("").astype(str)
+            sub["_file_path"] = path
+            sub["_file_name"] = os.path.basename(path)
+
+            # Filter out empty search texts
+            sub = sub[sub["_search_text"] != ""].reset_index(drop=True)
+            frames.append(sub)
+
+        if not frames:
+            return pd.Series(dtype=str), pd.DataFrame()
+
+        meta_df = pd.concat(frames, ignore_index=True)
+        texts = meta_df["_search_text"]
+        return texts, meta_df
 
     def _on_search_finished(self, results: list, total_hits: int, config: dict):
-        meta = self._search_entry_meta
+        self._stop_search_animation()
+
+        meta_df = self._search_meta_df
+        if meta_df is None or meta_df.empty:
+            self._last_table_data = []
+            self._table_model.clear()
+            return
+
         self._search_panel.set_total_hits(total_hits)
 
-        # Build full table data
-        table_data = []
+        # Build table data using vectorized indexing
+        indices = [r["index"] for r in results]
+        if not indices:
+            self._last_table_data = []
+            self._last_current_file = self._file_tabs.get_current_file()
+            self._render_table()
+            return
+
+        matched = meta_df.iloc[indices].copy()
+        matched = matched.reset_index(drop=True)
+
         current_file = self._file_tabs.get_current_file()
-        for r in results:
-            idx = r["index"]
-            if idx < len(meta):
-                entry = meta[idx]
-                row = {"source": entry.get("source", "")}
-                mapping = self._column_mappings.get(entry["file_path"], {})
-                for t_col in mapping.get("targets", []):
-                    row[t_col] = entry.get(t_col, "")
-                if current_file == "all":
-                    row["meta"] = os.path.basename(entry.get("file_path", ""))
-                table_data.append(row)
+        table_data = []
+        for i in range(len(matched)):
+            row = {"source": matched.iloc[i]["_source"]}
+            for col in matched.columns:
+                if col.startswith("_"):
+                    continue
+                row[col] = matched.iloc[i][col]
+            if current_file == "all":
+                row["meta"] = matched.iloc[i]["_file_name"]
+            table_data.append(row)
 
         self._last_table_data = table_data
         self._last_current_file = current_file
         self._render_table()
 
     def _render_table(self):
-        """Render table data respecting current view mode, filter, and highlighting."""
         table_data = self._last_table_data
         current_file = self._last_current_file
         if not table_data:
@@ -404,8 +474,13 @@ class MainWindow(QMainWindow):
             display_data.append(d)
 
         self._table_model.set_results(display_data, columns)
-        # Pass the search query to the view for highlighting
-        self._results_view.set_highlight_query(self._last_search_query)
+
+        # Set highlight queries: search query for source, filter text for targets
+        self._results_view.set_highlight_queries(
+            search_query=self._last_search_query,
+            filter_query=self._search_panel.get_filter_text(),
+            search_direction=self._last_search_direction,
+        )
 
     def _on_view_mode_changed(self, mode: str):
         self._render_table()
