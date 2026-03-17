@@ -173,8 +173,19 @@ class MainWindow(QMainWindow):
         KEYEVENTF_KEYUP = 0x0002
         VK_CONTROL = 0x11
         VK_SHIFT = 0x10
-        VK_K = 0x4B
         VK_C = 0x43
+
+        # Wait until the user physically releases Ctrl+Shift+K.
+        # GetAsyncKeyState returns negative if key is currently pressed.
+        get_key = ctypes.windll.user32.GetAsyncKeyState
+        deadline = _time.time() + 1.0  # max 1 second wait
+        while _time.time() < deadline:
+            ctrl = get_key(VK_CONTROL) & 0x8000
+            shift = get_key(VK_SHIFT) & 0x8000
+            if not ctrl and not shift:
+                break
+            _time.sleep(0.02)
+        _time.sleep(0.05)  # Small extra delay after release
 
         class KEYBDINPUT(ctypes.Structure):
             _fields_ = [
@@ -200,16 +211,7 @@ class MainWindow(QMainWindow):
             inp._input.ki.dwFlags = flags
             return inp
 
-        # First: release all modifier keys that are still held from Ctrl+Shift+K
-        release = (INPUT * 3)(
-            make_key_input(VK_K, KEYEVENTF_KEYUP),
-            make_key_input(VK_SHIFT, KEYEVENTF_KEYUP),
-            make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
-        )
-        ctypes.windll.user32.SendInput(3, release, ctypes.sizeof(INPUT))
-        _time.sleep(0.05)
-
-        # Now send a clean Ctrl+C
+        # Send clean Ctrl+C now that all keys are released
         copy = (INPUT * 4)(
             make_key_input(VK_CONTROL),
             make_key_input(VK_C),
