@@ -164,69 +164,16 @@ class MainWindow(QMainWindow):
             pass  # Silently fail if hotkey registration fails (e.g. no admin)
 
     def _on_hotkey_pressed(self):
-        """Called from keyboard listener thread while source app still has focus."""
-        import time as _time
-        import ctypes
-        from ctypes import wintypes
+        """Called from keyboard listener thread.
 
-        INPUT_KEYBOARD = 1
-        KEYEVENTF_KEYUP = 0x0002
-        VK_CONTROL = 0x11
-        VK_SHIFT = 0x10
-        VK_C = 0x43
-
-        # Wait until the user physically releases Ctrl+Shift+K.
-        # GetAsyncKeyState returns negative if key is currently pressed.
-        get_key = ctypes.windll.user32.GetAsyncKeyState
-        deadline = _time.time() + 1.0  # max 1 second wait
-        while _time.time() < deadline:
-            ctrl = get_key(VK_CONTROL) & 0x8000
-            shift = get_key(VK_SHIFT) & 0x8000
-            if not ctrl and not shift:
-                break
-            _time.sleep(0.02)
-        _time.sleep(0.05)  # Small extra delay after release
-
-        class KEYBDINPUT(ctypes.Structure):
-            _fields_ = [
-                ("wVk", wintypes.WORD),
-                ("wScan", wintypes.WORD),
-                ("dwFlags", wintypes.DWORD),
-                ("time", wintypes.DWORD),
-                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
-            ]
-
-        class INPUT(ctypes.Structure):
-            class _INPUT(ctypes.Union):
-                _fields_ = [("ki", KEYBDINPUT)]
-            _fields_ = [
-                ("type", wintypes.DWORD),
-                ("_input", _INPUT),
-            ]
-
-        def make_key_input(vk, flags=0):
-            inp = INPUT()
-            inp.type = INPUT_KEYBOARD
-            inp._input.ki.wVk = vk
-            inp._input.ki.dwFlags = flags
-            return inp
-
-        # Send clean Ctrl+C now that all keys are released
-        copy = (INPUT * 4)(
-            make_key_input(VK_CONTROL),
-            make_key_input(VK_C),
-            make_key_input(VK_C, KEYEVENTF_KEYUP),
-            make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
-        )
-        ctypes.windll.user32.SendInput(4, copy, ctypes.sizeof(INPUT))
-
-        _time.sleep(0.2)  # Wait for clipboard to update
+        User copies text with Ctrl+C first, then presses Ctrl+Shift+K.
+        We just signal the Qt thread to read the clipboard and search.
+        """
         self._global_search_signal.emit("")
 
     def _on_global_search(self, _unused: str):
-        """Handle global hotkey — runs on Qt main thread where clipboard access is safe."""
-        # Small extra delay to ensure clipboard is ready
-        QTimer.singleShot(100, self._read_clipboard_and_search)
+        """Handle global hotkey — runs on Qt main thread."""
+        self._read_clipboard_and_search()
 
     def _read_clipboard_and_search(self):
         """Read clipboard via Qt and trigger search."""
