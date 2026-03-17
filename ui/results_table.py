@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex
+from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout,
@@ -75,6 +75,8 @@ class ResultsTableModel(QAbstractTableModel):
 class ResultsTableView(QWidget):
     """Widget containing view mode toggle + QTableView for results."""
 
+    view_mode_changed = pyqtSignal(str)  # "three_column" or "source_target"
+
     def __init__(self, i18n: I18n, parent=None):
         super().__init__(parent)
         self._i18n = i18n
@@ -116,8 +118,9 @@ class ResultsTableView(QWidget):
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         layout.addWidget(self._table)
 
-        # Connect view mode toggle
+        # Connect view mode toggle and language selector
         self._view_group.idToggled.connect(self._on_view_mode_changed)
+        self._lang_combo.currentIndexChanged.connect(self._on_lang_changed)
 
     def set_model(self, model: ResultsTableModel):
         self._table.setModel(model)
@@ -134,7 +137,14 @@ class ResultsTableView(QWidget):
     def _on_view_mode_changed(self, button_id: int, checked: bool):
         if not checked:
             return
-        self._lang_combo.setVisible(button_id == 0)
+        self._lang_combo.setVisible(button_id == 0)  # Show dropdown in three-column mode
+        mode = "three_column" if button_id == 0 else "source_target"
+        self.view_mode_changed.emit(mode)
+
+    def _on_lang_changed(self, index: int):
+        """Re-emit view mode change when target language changes in three-column mode."""
+        if self._three_col_radio.isChecked():
+            self.view_mode_changed.emit("three_column")
 
     def _on_double_click(self, index: QModelIndex):
         if self._model:
@@ -192,6 +202,10 @@ class ResultsTableView(QWidget):
 
     def copy_selected(self):
         self._copy_rows()
+
+    def get_selected_target_language(self) -> str:
+        """Return the selected target language in three-column mode."""
+        return self._lang_combo.currentText() if self._lang_combo.currentText() else ""
 
     def get_view_mode(self) -> str:
         return "three_column" if self._three_col_radio.isChecked() else "source_target"

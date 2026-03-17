@@ -84,7 +84,12 @@ class MainWindow(QMainWindow):
         self._table_model = ResultsTableModel(self._i18n)
         self._results_view = ResultsTableView(self._i18n)
         self._results_view.set_model(self._table_model)
+        self._results_view.view_mode_changed.connect(self._on_view_mode_changed)
         layout.addWidget(self._results_view, stretch=1)
+
+        # Last search results cache for view mode switching
+        self._last_search_results: list = []
+        self._last_search_config: dict = {}
 
         # Toast notification
         self._toast = ToastNotification(central)
@@ -312,7 +317,7 @@ class MainWindow(QMainWindow):
             results = filtered
             self._search_panel.set_total_hits(len(results))
 
-        # Build table data
+        # Build table data (cached for view mode switching)
         table_data = []
         current_file = self._file_tabs.get_current_file()
         for r in results:
@@ -327,28 +332,54 @@ class MainWindow(QMainWindow):
                     row["meta"] = os.path.basename(entry.get("file_path", ""))
                 table_data.append(row)
 
-        # Determine columns
-        columns = [self._i18n.t("source_col")]
+        self._last_table_data = table_data
+        self._last_current_file = current_file
+        self._render_table()
+
+    def _render_table(self):
+        """Render table data respecting current view mode."""
+        table_data = getattr(self, "_last_table_data", [])
+        current_file = getattr(self, "_last_current_file", "all")
+        if not table_data:
+            return
+
+        view_mode = self._results_view.get_view_mode()
         all_targets = set()
         for mapping in self._column_mappings.values():
             all_targets.update(mapping["targets"])
-        columns.extend(sorted(all_targets))
+        sorted_targets = sorted(all_targets)
+
+        if view_mode == "three_column":
+            # Show only one target language
+            selected_lang = self._results_view.get_selected_target_language()
+            if not selected_lang and sorted_targets:
+                selected_lang = sorted_targets[0]
+            visible_targets = [selected_lang] if selected_lang and selected_lang in all_targets else sorted_targets[:1]
+        else:
+            # Source + target: show all target columns
+            visible_targets = sorted_targets
+
+        columns = [self._i18n.t("source_col")]
+        columns.extend(visible_targets)
         if current_file == "all":
             columns.append(self._i18n.t("meta_info"))
 
-        # Build display data
         display_data = []
         for row in table_data:
             d = {"score": row["score"], self._i18n.t("source_col"): row.get("source", "")}
-            for t in sorted(all_targets):
+            for t in visible_targets:
                 d[t] = row.get(t, "")
             if current_file == "all":
                 d[self._i18n.t("meta_info")] = row.get("meta", "")
             d["source"] = row.get("source", "")
-            d["target"] = " | ".join(row.get(t, "") for t in sorted(all_targets))
+            d["target"] = " | ".join(row.get(t, "") for t in visible_targets)
             display_data.append(d)
 
         self._table_model.set_results(display_data, columns)
+
+    def _on_view_mode_changed(self, mode: str):
+        """Re-render table when view mode toggle changes."""
+        self._render_table()
 
     def _on_tab_changed(self, file_path: str):
         pass  # Search re-triggered by user

@@ -1,4 +1,4 @@
-from PyQt6.QtCore import pyqtSignal, QTimer, Qt
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QPushButton,
     QCheckBox, QRadioButton, QButtonGroup, QComboBox, QSlider,
@@ -16,10 +16,6 @@ class SearchPanel(QWidget):
     def __init__(self, i18n: I18n, parent=None):
         super().__init__(parent)
         self._i18n = i18n
-        self._debounce_timer = QTimer(self)
-        self._debounce_timer.setSingleShot(True)
-        self._debounce_timer.setInterval(300)
-        self._debounce_timer.timeout.connect(self._emit_search)
         self._setup_ui()
 
     def _setup_ui(self):
@@ -32,7 +28,6 @@ class SearchPanel(QWidget):
         row1.addWidget(self._search_label)
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText(self._i18n.t("btn_search") + "...")
-        self._search_box.textChanged.connect(self._on_text_changed)
         self._search_box.returnPressed.connect(self._on_search_clicked)
         row1.addWidget(self._search_box, stretch=1)
         self._search_btn = QPushButton(self._i18n.t("btn_search"))
@@ -105,13 +100,7 @@ class SearchPanel(QWidget):
         row4.addWidget(self._hits_label)
         main_layout.addLayout(row4)
 
-    def _on_text_changed(self, text: str):
-        self._debounce_timer.stop()
-        if len(text) >= 2:
-            self._debounce_timer.start()
-
     def _on_search_clicked(self):
-        self._debounce_timer.stop()
         self._emit_search()
 
     def _on_direction_changed(self):
