@@ -21,18 +21,25 @@ class HighlightDelegate(QStyledItemDelegate):
     Both are highlighted in all non-meta columns for maximum visibility.
     """
 
+    # Light tint for target cells that are translation pairs of matched source
+    TARGET_TINT = "#FFF9C4"  # Very light yellow
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._search_query = ""
         self._filter_query = ""
-        self._highlight_columns: set = set()  # Column indices to highlight
+        self._highlight_columns: set = set()  # All non-meta column indices
+        self._source_columns: set = set()     # Source column indices
+        self._target_columns: set = set()     # Target column indices
 
     def set_queries(self, search_query: str = "", filter_query: str = ""):
         self._search_query = search_query
         self._filter_query = filter_query
 
-    def set_highlight_columns(self, columns: set):
+    def set_highlight_columns(self, columns: set, source_columns: set = None, target_columns: set = None):
         self._highlight_columns = columns
+        self._source_columns = source_columns or set()
+        self._target_columns = target_columns or set()
 
     def _has_highlights(self) -> bool:
         return bool(self._search_query or self._filter_query)
@@ -73,15 +80,21 @@ class HighlightDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
-        # Check if any query actually matches this cell text
         text_str = str(text)
         text_lower = text_str.lower()
-        has_match = False
+        col = index.column()
+
+        # Check if any query literally matches this cell text
+        has_substring_match = False
         if self._search_query and self._search_query.lower() in text_lower:
-            has_match = True
+            has_substring_match = True
         if self._filter_query and self._filter_query.lower() in text_lower:
-            has_match = True
-        if not has_match:
+            has_substring_match = True
+
+        # Target columns always get a tint when search is active (they are translation pairs)
+        is_target_cell = col in self._target_columns and self._search_query
+
+        if not has_substring_match and not is_target_cell:
             super().paint(painter, option, index)
             return
 
@@ -90,11 +103,19 @@ class HighlightDelegate(QStyledItemDelegate):
 
         if option.state & QStyle.StateFlag.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
+        elif is_target_cell and not has_substring_match:
+            # Light tint for target cells without literal match
+            from PyQt6.QtGui import QColor
+            painter.fillRect(option.rect, QColor(self.TARGET_TINT))
         else:
             painter.fillRect(option.rect, option.palette.base())
 
         doc = QTextDocument()
-        html = self._make_highlighted_html(text_str)
+        if has_substring_match:
+            html = self._make_highlighted_html(text_str)
+        else:
+            # No substring match but target tint — show plain text
+            html = text_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         doc.setHtml(html)
         doc.setDefaultFont(option.font)
         doc.setTextWidth(option.rect.width())
@@ -246,12 +267,16 @@ class ResultsTableView(QWidget):
             search_query=search_query,
             filter_query=filter_query,
         )
-        # Highlight all columns except meta-info
         if self._model:
             columns = self._model.get_columns()
             meta_name = self._i18n.t("meta_info")
-            highlight_cols = {i for i, c in enumerate(columns) if c != meta_name}
-            self._highlight_delegate.set_highlight_columns(highlight_cols)
+            source_name = self._i18n.t("source_col")
+            all_cols = {i for i, c in enumerate(columns) if c != meta_name}
+            source_cols = {i for i, c in enumerate(columns) if c == source_name}
+            target_cols = {i for i, c in enumerate(columns) if c != meta_name and c != source_name}
+            self._highlight_delegate.set_highlight_columns(
+                all_cols, source_columns=source_cols, target_columns=target_cols
+            )
         self._table.viewport().update()
 
     def _on_view_mode_changed(self, button_id: int, checked: bool):
