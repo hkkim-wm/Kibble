@@ -1,21 +1,21 @@
-# Changelog
+# 변경 이력
 
 ## v1.1 — 2026-03-17
 
-### New Features
-- **Menu bar** — Added File menu (Open Files, Exit) and Help menu (About Kibble) with full EN/KO translations. The About dialog shows supported formats, keyboard shortcuts, and usage tips.
+### 새로운 기능
+- **메뉴 바** — 파일 메뉴(파일 열기, 종료)와 도움말 메뉴(Kibble 정보)를 추가. About 대화상자에서 지원 형식, 키보드 단축키, 사용 팁 확인 가능. EN/KO 번역 지원.
 
-### Improvements
-- **Cross-file column merging** — When searching across multiple files, columns referring to the same language are merged into a single column regardless of naming differences (e.g., "Target_EN", "English", "영어" all merge into "EN"). Supported for all 17 language codes.
-- **Chinese Traditional/Simplified split** — Chinese (Taiwan) and Chinese (PRC) are now recognized as separate targets: CT (CHT, zh-TW, Chinese Traditional, Target_CT) and CS (CHS, zh-CN, Chinese Simplified, Target_CS).
-- **Column ordering** — Translation columns appear first (preserving original file order), followed by relevant info columns (Note, 분류), then metadata columns (#, 상태, 비고, Table, Status, Date, etc.) pushed to the back.
-- **Inconsistency detection** — The duplicate translation warning now only compares language columns, ignoring metadata and info columns. Empty cells from files missing a language are also ignored. Only the specific language cell(s) with conflicting translations are highlighted red, not the entire row.
+### 개선 사항
+- **파일 간 열 병합** — 여러 파일을 동시 검색할 때 동일 언어를 가리키는 열을 자동 병합 (예: "Target_EN", "English", "영어" → 모두 "EN"으로 통합). 17개 언어 코드 지원.
+- **중국어 번체/간체 분리** — 중국어(대만)과 중국어(중국)을 별도 타겟으로 인식: CT (CHT, zh-TW, Chinese Traditional, Target_CT) 및 CS (CHS, zh-CN, Chinese Simplified, Target_CS).
+- **열 정렬 순서** — 번역 열이 먼저 표시되고(원본 파일 순서 유지), 참고 정보 열(Note, 분류)이 그 다음, 메타데이터 열(#, 상태, 비고, Table, Status, Date 등)은 맨 뒤로 배치.
+- **불일치 감지 개선** — 번역 불일치 경고가 번역 열만 비교하고 메타데이터/참고 열은 무시. 해당 언어 열이 없는 파일의 빈 셀도 무시. 전체 행이 아닌 불일치가 있는 특정 언어 셀만 빨간색으로 강조 표시.
 
-### Bug Fixes
-- **Crash fix for mixed file search** — Fixed crash when searching "All" across xlsx and csv files with different column structures. NaN values from mismatched columns are now handled correctly.
-- **Column order preservation** — Search results now maintain the original column order from loaded files instead of sorting alphabetically.
-- **Search worker race condition** — Old search worker signals are disconnected before starting a new search, preventing stale results from corrupting the display.
+### 버그 수정
+- **혼합 파일 검색 시 충돌 수정** — xlsx와 csv 파일을 함께 "전체 검색"할 때 발생하던 충돌 해결. 서로 다른 열 구조로 인한 NaN 값 처리 개선.
+- **열 순서 유지** — 검색 결과에서 열이 알파벳순으로 정렬되던 문제 수정. 원본 파일의 열 순서를 유지.
+- **검색 워커 경합 조건 수정** — 새 검색 시작 전 이전 검색 워커의 시그널을 해제하여 오래된 결과가 표시되는 문제 방지.
 
 ## v1.0 — 2026-03-16
 
-- Initial release.
+- 최초 릴리스.
