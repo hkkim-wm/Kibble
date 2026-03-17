@@ -164,16 +164,18 @@ class MainWindow(QMainWindow):
             pass  # Silently fail if hotkey registration fails (e.g. no admin)
 
     def _on_hotkey_pressed(self):
-        """Called from keyboard listener thread — signal Qt thread to handle it."""
-        # Just emit a signal; clipboard reading happens on the Qt main thread
+        """Called from keyboard listener thread while source app still has focus."""
+        import time as _time
+        # Send Ctrl+C NOW while the source app (Excel/LibreOffice) still has focus
+        keyboard.send("ctrl+c")
+        _time.sleep(0.15)  # Wait for clipboard to update
+        # Now signal Qt thread to read clipboard and search
         self._global_search_signal.emit("")
 
     def _on_global_search(self, _unused: str):
         """Handle global hotkey — runs on Qt main thread where clipboard access is safe."""
-        # Simulate Ctrl+C by sending keystroke to copy selection
-        keyboard.send("ctrl+c")
-        # Brief delay then read clipboard via Qt (safe on main thread)
-        QTimer.singleShot(200, self._read_clipboard_and_search)
+        # Small extra delay to ensure clipboard is ready
+        QTimer.singleShot(100, self._read_clipboard_and_search)
 
     def _read_clipboard_and_search(self):
         """Read clipboard via Qt and trigger search."""
