@@ -1,6 +1,3 @@
-from typing import Optional
-
-
 TRANSLATIONS = {
     "en": {
         "search_for": "Search for",

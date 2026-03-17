@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
 
 from core.parser import detect_columns, check_entry_limit
 from core.search import SearchConfig
-from core.session import SessionManager, DEFAULT_SESSION
+from core.session import SessionManager
 from ui.i18n import I18n
 from ui.search_panel import SearchPanel
 from ui.file_tabs import FileTabs
@@ -101,7 +101,6 @@ class MainWindow(QMainWindow):
 
         # File tabs
         self._file_tabs = FileTabs(self._i18n)
-        self._file_tabs.tab_changed.connect(self._on_tab_changed)
         self._file_tabs.file_closed.connect(self._on_file_closed)
         self._file_tabs.configure_requested.connect(self._on_configure_columns)
         layout.addWidget(self._file_tabs)
@@ -491,9 +490,6 @@ class MainWindow(QMainWindow):
 
     def _on_view_mode_changed(self, mode: str):
         self._render_table()
-
-    def _on_tab_changed(self, file_path: str):
-        pass
 
     # --- Status ---
 

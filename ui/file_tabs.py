@@ -81,11 +81,6 @@ class FileTabs(QWidget):
     def get_loaded_files(self) -> list[str]:
         return list(self._file_paths.values())
 
-    def clear_all(self):
-        while self._tabs.count() > 1:
-            self._tabs.removeTab(1)
-        self._file_paths.clear()
-
     def update_translations(self):
         self._tabs.setTabText(0, self._i18n.t("search_all"))
         self._gear_btn.setToolTip(self._i18n.t("configure_columns"))

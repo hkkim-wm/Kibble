@@ -94,13 +94,11 @@ def parse_file(file_path: str) -> pd.DataFrame:
 def detect_columns(df: pd.DataFrame) -> Tuple[str, List[str]]:
     columns = list(df.columns)
     source = None
-    recognized = {}
 
     for col in columns:
         col_stripped = str(col).strip()
         for lang_code, pattern in LANG_PATTERNS.items():
             if pattern.match(col_stripped):
-                recognized[col] = lang_code
                 if lang_code == "KO":
                     source = col
                 break

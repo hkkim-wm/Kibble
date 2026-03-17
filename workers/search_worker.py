@@ -1,5 +1,3 @@
-from typing import List, Dict, Any
-
 import pandas as pd
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -10,7 +8,6 @@ class SearchWorker(QThread):
     """Background worker for search execution."""
 
     finished = pyqtSignal(list, int)  # results, total_hits
-    cancelled = pyqtSignal()
 
     def __init__(self, texts: pd.Series, config: SearchConfig, parent=None):
         super().__init__(parent)
@@ -20,11 +17,9 @@ class SearchWorker(QThread):
 
     def run(self):
         if self._cancelled:
-            self.cancelled.emit()
             return
         result_df = search_vectorized(self._texts, self._config)
         if self._cancelled:
-            self.cancelled.emit()
             return
         results = [
             {"index": int(row["index"]), "score": int(row["score"])}
