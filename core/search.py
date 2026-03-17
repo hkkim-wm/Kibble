@@ -54,11 +54,11 @@ def substring_score(query: str, text: str, case_sensitive: bool = False, wildcar
 def fuzzy_score(query: str, text: str) -> int:
     if not query or not text:
         return 0
-    # WRatio uses a weighted combination of ratio, partial_ratio,
-    # token_sort_ratio, and token_set_ratio, and handles length
-    # differences well. Prevents short entries from scoring 100%
-    # against long queries just because they share a token.
-    return int(fuzz.WRatio(query, text))
+    # Use fuzz.ratio for strict full-string similarity.
+    # WRatio/token_set_ratio inflate scores when strings share
+    # even a single common token (e.g. "및") due to partial matching.
+    # fuzz.ratio compares entire strings honestly.
+    return int(fuzz.ratio(query, text))
 
 
 def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
@@ -124,7 +124,7 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
         fuzzy_results = process.extract(
             config.query,
             texts_list,
-            scorer=fuzz.WRatio,
+            scorer=fuzz.ratio,
             limit=None,
             score_cutoff=max(config.threshold, 1),  # Skip below threshold early
         )
