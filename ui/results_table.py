@@ -227,7 +227,7 @@ class ResultsTableView(QWidget):
 
         # Table view
         self._table = QTableView()
-        self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectItems)
         self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self._table.setSortingEnabled(False)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -353,7 +353,14 @@ class ResultsTableView(QWidget):
         QApplication.clipboard().setText("\n".join(lines))
 
     def copy_selected(self):
-        self._copy_rows()
+        """Copy current cell text to clipboard (Ctrl+C)."""
+        if not self._model:
+            return
+        index = self._table.currentIndex()
+        if index.isValid():
+            text = self._model.get_cell_text(index.row(), index.column())
+            if text:
+                QApplication.clipboard().setText(text)
 
     def get_selected_target_language(self) -> str:
         return self._lang_combo.currentText() if self._lang_combo.currentText() else ""
