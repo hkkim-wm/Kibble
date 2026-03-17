@@ -169,12 +169,11 @@ class MainWindow(QMainWindow):
         import ctypes
         from ctypes import wintypes
 
-        # Use SendInput to send Ctrl+C directly to the foreground app.
-        # keyboard.send() doesn't work here because the library intercepts
-        # its own keystrokes during hotkey processing.
         INPUT_KEYBOARD = 1
         KEYEVENTF_KEYUP = 0x0002
         VK_CONTROL = 0x11
+        VK_SHIFT = 0x10
+        VK_K = 0x4B
         VK_C = 0x43
 
         class KEYBDINPUT(ctypes.Structure):
@@ -201,14 +200,23 @@ class MainWindow(QMainWindow):
             inp._input.ki.dwFlags = flags
             return inp
 
-        # Ctrl down, C down, C up, Ctrl up
-        inputs = (INPUT * 4)(
+        # First: release all modifier keys that are still held from Ctrl+Shift+K
+        release = (INPUT * 3)(
+            make_key_input(VK_K, KEYEVENTF_KEYUP),
+            make_key_input(VK_SHIFT, KEYEVENTF_KEYUP),
+            make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+        )
+        ctypes.windll.user32.SendInput(3, release, ctypes.sizeof(INPUT))
+        _time.sleep(0.05)
+
+        # Now send a clean Ctrl+C
+        copy = (INPUT * 4)(
             make_key_input(VK_CONTROL),
             make_key_input(VK_C),
             make_key_input(VK_C, KEYEVENTF_KEYUP),
             make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
         )
-        ctypes.windll.user32.SendInput(4, inputs, ctypes.sizeof(INPUT))
+        ctypes.windll.user32.SendInput(4, copy, ctypes.sizeof(INPUT))
 
         _time.sleep(0.2)  # Wait for clipboard to update
         self._global_search_signal.emit("")
