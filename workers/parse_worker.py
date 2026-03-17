@@ -18,6 +18,8 @@ class ParseWorker(QThread):
     def run(self):
         try:
             df = parse_file(self._file_path)
+            # Ensure column names are strings (txt files with header=None have int columns)
+            df.columns = [str(c) for c in df.columns]
             source, targets = detect_columns(df)
 
             extra = df.attrs.get("extra_sheets", 0)
