@@ -400,9 +400,10 @@ class MainWindow(QMainWindow):
         matched = matched.reset_index(drop=True)
 
         current_file = self._file_tabs.get_current_file()
+        scores = [r["score"] for r in results]
         table_data = []
         for i in range(len(matched)):
-            row = {"source": matched.iloc[i]["_source"]}
+            row = {"source": matched.iloc[i]["_source"], "_score": scores[i]}
             for col in matched.columns:
                 if col.startswith("_"):
                     continue
@@ -464,7 +465,12 @@ class MainWindow(QMainWindow):
 
         display_data = []
         for row in table_data:
-            d = {self._i18n.t("source_col"): row.get("source", "")}
+            score = row.get("_score", 0)
+            d = {
+                "_score": score,
+                "_score_num": score,  # Numeric for sorting
+                self._i18n.t("source_col"): row.get("source", ""),
+            }
             for t in visible_targets:
                 d[t] = row.get(t, "")
             if current_file == "all":
@@ -474,6 +480,7 @@ class MainWindow(QMainWindow):
             display_data.append(d)
 
         self._table_model.set_results(display_data, columns)
+        self._results_view.resize_score_column()
 
         # Set highlight queries: search query for source, filter text for targets
         self._results_view.set_highlight_queries(

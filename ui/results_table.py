@@ -1,7 +1,10 @@
 import re
 from typing import List, Dict, Any, Optional
 
-from PyQt6.QtCore import Qt, QAbstractTableModel, QModelIndex, pyqtSignal, QSize, QRectF
+from PyQt6.QtCore import (
+    Qt, QAbstractTableModel, QModelIndex, pyqtSignal, QSize, QRectF,
+    QSortFilterProxyModel,
+)
 from PyQt6.QtGui import QAction, QTextDocument, QPalette, QAbstractTextDocumentLayout
 from PyQt6.QtWidgets import (
     QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout,
@@ -127,13 +130,15 @@ class HighlightDelegate(QStyledItemDelegate):
 
 
 class ResultsTableModel(QAbstractTableModel):
-    """Model for search results display."""
+    """Model for search results display. First column is always '%' (match score)."""
+
+    SCORE_COL = "%"
 
     def __init__(self, i18n: I18n, parent=None):
         super().__init__(parent)
         self._i18n = i18n
         self._results: List[Dict[str, Any]] = []
-        self._columns: List[str] = []
+        self._columns: List[str] = []  # Does NOT include the score column
 
     def set_results(self, results: List[Dict[str, Any]], columns: List[str]) -> None:
         self.beginResetModel()
@@ -151,28 +156,50 @@ class ResultsTableModel(QAbstractTableModel):
         return len(self._results)
 
     def columnCount(self, parent=QModelIndex()) -> int:
-        return len(self._columns)
+        if not self._columns:
+            return 0
+        return len(self._columns) + 1  # +1 for score column
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid() or role != Qt.ItemDataRole.DisplayRole:
+        if not index.isValid():
             return None
         row = index.row()
         col = index.column()
-        if row >= len(self._results) or col >= len(self._columns):
+        if row >= len(self._results):
             return None
-        col_name = self._columns[col]
-        return self._results[row].get(col_name, "")
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return self._results[row].get("_score", "")
+            col_name = self._columns[col - 1] if col - 1 < len(self._columns) else ""
+            return self._results[row].get(col_name, "")
+
+        # For sorting: return numeric score for column 0
+        if role == Qt.ItemDataRole.UserRole:
+            if col == 0:
+                return self._results[row].get("_score_num", 0)
+            col_name = self._columns[col - 1] if col - 1 < len(self._columns) else ""
+            return self._results[row].get(col_name, "")
+
+        return None
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal:
-            if section < len(self._columns):
-                return self._columns[section]
+            if section == 0:
+                return self.SCORE_COL
+            if section - 1 < len(self._columns):
+                return self._columns[section - 1]
         return None
 
     def get_columns(self) -> List[str]:
+        """Return display columns (excluding score)."""
         return list(self._columns)
+
+    def get_all_columns(self) -> List[str]:
+        """Return all columns including score."""
+        return [self.SCORE_COL] + list(self._columns)
 
     def get_row_data(self, row: int) -> Dict[str, Any]:
         if 0 <= row < len(self._results):
@@ -183,6 +210,19 @@ class ResultsTableModel(QAbstractTableModel):
         index = self.index(row, col)
         val = self.data(index)
         return str(val) if val is not None else ""
+
+
+class SortProxyModel(QSortFilterProxyModel):
+    """Proxy model that sorts by UserRole for numeric columns."""
+
+    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
+        left_data = self.sourceModel().data(left, Qt.ItemDataRole.UserRole)
+        right_data = self.sourceModel().data(right, Qt.ItemDataRole.UserRole)
+        # Numeric comparison for score column
+        if isinstance(left_data, (int, float)) and isinstance(right_data, (int, float)):
+            return left_data < right_data
+        # String comparison for text columns
+        return str(left_data or "").lower() < str(right_data or "").lower()
 
 
 class ResultsTableView(QWidget):
@@ -229,7 +269,7 @@ class ResultsTableView(QWidget):
         self._table = QTableView()
         self._table.setSelectionBehavior(QTableView.SelectionBehavior.SelectItems)
         self._table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
-        self._table.setSortingEnabled(False)
+        self._table.setSortingEnabled(True)
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._show_context_menu)
         self._table.doubleClicked.connect(self._on_double_click)
@@ -237,6 +277,11 @@ class ResultsTableView(QWidget):
         self._table.horizontalHeader().setStretchLastSection(True)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self._table.horizontalHeader().setDefaultSectionSize(200)
+        # Make row heights adjustable by dragging
+        self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        self._table.verticalHeader().setDefaultSectionSize(30)
+        # Make % column narrow
+        self._table.horizontalHeader().setMinimumSectionSize(35)
 
         # Highlight delegate
         self._highlight_delegate = HighlightDelegate(self._table)
@@ -249,8 +294,10 @@ class ResultsTableView(QWidget):
         self._lang_combo.currentIndexChanged.connect(self._on_lang_changed)
 
     def set_model(self, model: ResultsTableModel):
-        self._table.setModel(model)
         self._model = model
+        self._proxy = SortProxyModel(self)
+        self._proxy.setSourceModel(model)
+        self._table.setModel(self._proxy)
 
     def set_target_languages(self, languages: List[str]):
         self._lang_combo.clear()
@@ -260,6 +307,11 @@ class ResultsTableView(QWidget):
         if languages:
             self._lang_combo.setCurrentIndex(en_idx)
 
+    def resize_score_column(self):
+        """Make the % column narrow."""
+        if self._model and self._model.columnCount() > 0:
+            self._table.setColumnWidth(0, 40)
+
     def set_highlight_queries(self, search_query: str = "", filter_query: str = "",
                               search_direction: str = "source"):
         """Set highlight queries for source and target columns."""
@@ -268,12 +320,13 @@ class ResultsTableView(QWidget):
             filter_query=filter_query,
         )
         if self._model:
-            columns = self._model.get_columns()
+            columns = self._model.get_columns()  # Excludes score column
             meta_name = self._i18n.t("meta_info")
             source_name = self._i18n.t("source_col")
-            all_cols = {i for i, c in enumerate(columns) if c != meta_name}
-            source_cols = {i for i, c in enumerate(columns) if c == source_name}
-            target_cols = {i for i, c in enumerate(columns) if c != meta_name and c != source_name}
+            # +1 offset because column 0 is the score column
+            all_cols = {i + 1 for i, c in enumerate(columns) if c != meta_name}
+            source_cols = {i + 1 for i, c in enumerate(columns) if c == source_name}
+            target_cols = {i + 1 for i, c in enumerate(columns) if c != meta_name and c != source_name}
             self._highlight_delegate.set_highlight_columns(
                 all_cols, source_columns=source_cols, target_columns=target_cols
             )
@@ -291,7 +344,7 @@ class ResultsTableView(QWidget):
         if checked:
             self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         else:
-            self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+            self._table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
             self._table.verticalHeader().setDefaultSectionSize(30)
 
     def _on_lang_changed(self, index: int):
@@ -299,27 +352,30 @@ class ResultsTableView(QWidget):
             self.view_mode_changed.emit("three_column")
 
     def _on_double_click(self, index: QModelIndex):
-        if self._model:
-            text = self._model.get_cell_text(index.row(), index.column())
+        """Copy clicked cell to clipboard."""
+        if self._model and self._proxy:
+            source_index = self._proxy.mapToSource(index)
+            text = self._model.get_cell_text(source_index.row(), source_index.column())
             if text:
                 QApplication.clipboard().setText(text)
 
     def _show_context_menu(self, position):
-        if not self._model:
+        if not self._model or not self._proxy:
             return
-        index = self._table.indexAt(position)
-        if not index.isValid():
+        proxy_index = self._table.indexAt(position)
+        if not proxy_index.isValid():
             return
+        source_index = self._proxy.mapToSource(proxy_index)
 
         menu = QMenu(self)
-        row_data = self._model.get_row_data(index.row())
+        row_data = self._model.get_row_data(source_index.row())
 
         copy_row_action = QAction(self._i18n.t("copy_row"), self)
         copy_row_action.triggered.connect(lambda: self._copy_rows())
         menu.addAction(copy_row_action)
 
         copy_cell_action = QAction(self._i18n.t("copy_cell"), self)
-        cell_text = self._model.get_cell_text(index.row(), index.column())
+        cell_text = self._model.get_cell_text(source_index.row(), source_index.column())
         copy_cell_action.triggered.connect(lambda: QApplication.clipboard().setText(cell_text))
         menu.addAction(copy_cell_action)
 
@@ -338,27 +394,30 @@ class ResultsTableView(QWidget):
         menu.exec(self._table.viewport().mapToGlobal(position))
 
     def _copy_rows(self):
-        if not self._model:
+        if not self._model or not self._proxy:
             return
         selection = self._table.selectionModel()
         if not selection.hasSelection():
             return
-        rows = sorted(set(idx.row() for idx in selection.selectedIndexes()))
+        proxy_rows = sorted(set(idx.row() for idx in selection.selectedIndexes()))
         lines = []
-        for row in rows:
+        for proxy_row in proxy_rows:
             cols = []
             for col in range(self._model.columnCount()):
-                cols.append(self._model.get_cell_text(row, col))
+                proxy_idx = self._proxy.index(proxy_row, col)
+                source_idx = self._proxy.mapToSource(proxy_idx)
+                cols.append(self._model.get_cell_text(source_idx.row(), source_idx.column()))
             lines.append("\t".join(cols))
         QApplication.clipboard().setText("\n".join(lines))
 
     def copy_selected(self):
         """Copy current cell text to clipboard (Ctrl+C)."""
-        if not self._model:
+        if not self._model or not self._proxy:
             return
-        index = self._table.currentIndex()
-        if index.isValid():
-            text = self._model.get_cell_text(index.row(), index.column())
+        proxy_index = self._table.currentIndex()
+        if proxy_index.isValid():
+            source_index = self._proxy.mapToSource(proxy_index)
+            text = self._model.get_cell_text(source_index.row(), source_index.column())
             if text:
                 QApplication.clipboard().setText(text)
 

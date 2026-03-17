@@ -117,13 +117,12 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
     # --- Fuzzy matching (RapidFuzz batch API) ---
     if config.mode in ("fuzzy", "both"):
         texts_list = texts_clean.tolist()
-        # Use process.cdist for batch scoring — much faster than per-entry calls
         fuzzy_results = process.extract(
             config.query,
             texts_list,
             scorer=fuzz.token_set_ratio,
-            limit=None,  # Score all
-            score_cutoff=0,
+            limit=None,
+            score_cutoff=max(config.threshold, 1),  # Skip below threshold early
         )
         for text, score, idx in fuzzy_results:
             if score > scores[idx]:
@@ -134,8 +133,8 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
     indices = np.where(mask)[0]
     matched_scores = scores[indices]
 
-    # Sort by score descending
-    sort_order = np.argsort(-matched_scores)
+    # Sort by score descending, then by original index ascending (stable file order for ties)
+    sort_order = np.lexsort((indices, -matched_scores))
     indices = indices[sort_order]
     matched_scores = matched_scores[sort_order]
 
