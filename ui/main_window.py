@@ -1,14 +1,16 @@
 import os
 import re
 import time
+import threading
 from typing import Dict, List, Any, Optional
 
+import keyboard
 import pandas as pd
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QShortcut, QKeySequence
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QShortcut, QKeySequence, QClipboard
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog, QStatusBar,
-    QLabel, QHBoxLayout, QPushButton, QMessageBox,
+    QLabel, QHBoxLayout, QPushButton, QMessageBox, QApplication,
 )
 
 from core.parser import detect_columns, check_entry_limit
@@ -45,7 +47,13 @@ DOG_FRAMES = [
 ]
 
 
+GLOBAL_HOTKEY = "ctrl+shift+k"
+
+
 class MainWindow(QMainWindow):
+    # Signal to receive text from global hotkey (thread-safe bridge)
+    _global_search_signal = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self._i18n = I18n(language="ko")
@@ -82,6 +90,7 @@ class MainWindow(QMainWindow):
 
         self._setup_ui()
         self._setup_shortcuts()
+        self._setup_global_hotkey()
         self._try_restore_session()
 
     def _setup_ui(self):
@@ -133,6 +142,9 @@ class MainWindow(QMainWindow):
         self._search_anim_label = QLabel("")
         self._search_anim_label.setVisible(False)
         status_bar.addWidget(self._search_anim_label)
+        self._hotkey_hint = QLabel(self._i18n.t("global_hotkey"))
+        self._hotkey_hint.setStyleSheet("color: #888; font-size: 11px;")
+        status_bar.addPermanentWidget(self._hotkey_hint)
         self._status_info = QLabel(f"Kibble v{APP_VERSION}")
         status_bar.addPermanentWidget(self._status_info)
         self.setStatusBar(status_bar)
@@ -144,6 +156,54 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+W"), self, self._close_current_tab)
         QShortcut(QKeySequence("Escape"), self, self._search_panel.clear_search)
 
+    def _setup_global_hotkey(self):
+        """Register Ctrl+Shift+K as a system-wide hotkey."""
+        self._global_search_signal.connect(self._on_global_search)
+        try:
+            keyboard.add_hotkey(GLOBAL_HOTKEY, self._on_hotkey_pressed, suppress=False)
+        except Exception:
+            pass  # Silently fail if hotkey registration fails (e.g. no admin)
+
+    def _on_hotkey_pressed(self):
+        """Called from keyboard listener thread — copy selection and emit signal."""
+        # Save current clipboard
+        import time as _time
+
+        # Simulate Ctrl+C to copy the selection in the active application
+        keyboard.send("ctrl+c")
+        _time.sleep(0.15)  # Brief wait for clipboard to update
+
+        # Read clipboard — must do via signal since we're in a background thread
+        try:
+            import ctypes
+            CF_UNICODETEXT = 13
+            ctypes.windll.user32.OpenClipboard(0)
+            handle = ctypes.windll.user32.GetClipboardData(CF_UNICODETEXT)
+            if handle:
+                ctypes.windll.kernel32.GlobalLock.restype = ctypes.c_wchar_p
+                text = ctypes.windll.kernel32.GlobalLock(handle)
+                if text:
+                    self._global_search_signal.emit(str(text))
+                ctypes.windll.kernel32.GlobalUnlock(handle)
+            ctypes.windll.user32.CloseClipboard()
+        except Exception:
+            pass
+
+    def _on_global_search(self, text: str):
+        """Handle global hotkey search — runs on Qt main thread."""
+        text = text.strip()
+        if len(text) < 2:
+            return
+        # Bring window to foreground
+        self.setWindowState(
+            self.windowState() & ~Qt.WindowState.WindowMinimized
+        )
+        self.show()
+        self.activateWindow()
+        self.raise_()
+        # Set text and search
+        self._search_panel.set_search_and_trigger(text)
+
     def _toggle_language(self):
         new_lang = "en" if self._i18n.language == "ko" else "ko"
         self._i18n.set_language(new_lang)
@@ -154,6 +214,7 @@ class MainWindow(QMainWindow):
         self._file_tabs.update_translations()
         self._results_view.update_translations()
         self._drop_hint.setText(f"\U0001F415 {self._i18n.t('drop_hint')}")
+        self._hotkey_hint.setText(self._i18n.t("global_hotkey"))
 
     # --- Search animation ---
 
@@ -546,4 +607,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._save_session()
+        try:
+            keyboard.remove_hotkey(GLOBAL_HOTKEY)
+        except Exception:
+            pass
         super().closeEvent(event)

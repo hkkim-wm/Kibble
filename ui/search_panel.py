@@ -140,6 +140,11 @@ class SearchPanel(QWidget):
         self._search_box.setFocus()
         self._search_box.selectAll()
 
+    def set_search_and_trigger(self, text: str):
+        """Set search text and immediately trigger search."""
+        self._search_box.setText(text)
+        self._emit_search()
+
     def clear_search(self):
         self._search_box.clear()
 

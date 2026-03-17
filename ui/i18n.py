@@ -39,6 +39,7 @@ TRANSLATIONS = {
         "source_col": "Source (KO)",
         "meta_info": "Meta-info",
         "word_wrap": "Word wrap",
+        "global_hotkey": "Global: Ctrl+Shift+K",
     },
     "ko": {
         "search_for": "검색어",
@@ -80,6 +81,7 @@ TRANSLATIONS = {
         "source_col": "원문 (KO)",
         "meta_info": "메타 정보",
         "word_wrap": "줄 바꿈",
+        "global_hotkey": "전역: Ctrl+Shift+K",
     },
 }
 
