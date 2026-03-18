@@ -10,7 +10,7 @@ from PyQt6.QtGui import QShortcut, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog, QStatusBar,
     QLabel, QHBoxLayout, QPushButton, QMessageBox, QApplication,
-    QMenuBar, QSplitter,
+    QMenuBar,
 )
 
 from core.parser import detect_columns, check_entry_limit, normalize_column_name, classify_column
@@ -113,26 +113,16 @@ class MainWindow(QMainWindow):
         self._file_tabs.file_closed.connect(self._on_file_closed)
         self._file_tabs.configure_requested.connect(self._on_configure_columns)
 
-        # Top container: search panel + file tabs
-        top_widget = QWidget()
-        top_layout = QVBoxLayout(top_widget)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-        top_layout.addWidget(self._search_panel)
-        top_layout.addWidget(self._file_tabs)
+        # Layout: search panel, file tabs, results table
+        layout.addWidget(self._search_panel)
+        layout.addWidget(self._file_tabs)
 
         # Results table
         self._table_model = ResultsTableModel(self._i18n)
         self._results_view = ResultsTableView(self._i18n)
         self._results_view.set_model(self._table_model)
         self._results_view.view_mode_changed.connect(self._on_view_mode_changed)
-
-        # Splitter between search panel area and results table
-        self._splitter = QSplitter(Qt.Orientation.Vertical)
-        self._splitter.addWidget(top_widget)
-        self._splitter.addWidget(self._results_view)
-        self._splitter.setStretchFactor(0, 0)  # search panel doesn't stretch
-        self._splitter.setStretchFactor(1, 1)  # results table takes remaining space
-        layout.addWidget(self._splitter, stretch=1)
+        layout.addWidget(self._results_view, stretch=1)
 
         # Toast notification
         self._toast = ToastNotification(central)
@@ -740,9 +730,6 @@ class MainWindow(QMainWindow):
     def _restore_session(self, session: dict):
         self._search_panel.restore_config(session)
         self._results_view.set_font_size(session.get("font_size", 12))
-        splitter_sizes = session.get("splitter_sizes", [])
-        if splitter_sizes:
-            self._splitter.setSizes(splitter_sizes)
         self._column_mappings = session.get("column_mappings", {})
         # Rebuild normalized target mappings for sessions saved before this feature
         for path, mapping in self._column_mappings.items():
@@ -768,7 +755,6 @@ class MainWindow(QMainWindow):
             "window_size": [self.width(), self.height()],
             "window_position": [self.x(), self.y()],
             "ui_language": self._i18n.language,
-            "splitter_sizes": self._splitter.sizes(),
         }
         self._session.save(session)
 
