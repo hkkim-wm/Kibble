@@ -127,12 +127,13 @@ class HighlightDelegate(QStyledItemDelegate):
             painter.fillRect(option.rect, option.palette.base())
 
         doc = QTextDocument()
+        # Use palette text color so dark mode renders readable text
+        text_color = option.palette.text().color().name()
         if has_substring_match:
             html = self._make_highlighted_html(text_str)
         else:
-            # No substring match but target tint — show plain text
             html = text_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        doc.setHtml(html)
+        doc.setHtml(f'<span style="color:{text_color}">{html}</span>')
         doc.setDefaultFont(option.font)
         doc.setTextWidth(option.rect.width())
 
