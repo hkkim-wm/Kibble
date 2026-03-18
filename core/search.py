@@ -16,6 +16,7 @@ class SearchConfig:
     case_sensitive: bool
     wildcards: bool
     ignore_spaces: bool = False
+    whole_word: bool = False
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -108,6 +109,31 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
                 q_lower = q_clean if case else q_clean.lower()
                 t_lower = matched_texts if case else matched_texts.str.lower()
                 is_exact = t_lower == q_lower
+                lengths = matched_texts.str.len().replace(0, 1)
+                ratio_scores = 75 + 25 * (q_len / lengths)
+                sub_scores = np.where(is_exact, 100, ratio_scores)
+                scores[mask.values] = np.maximum(scores[mask.values], sub_scores)
+        elif config.whole_word:
+            # Whole-word matching: use word boundaries for Latin/non-CJK text,
+            # fall back to normal substring for CJK text
+            _CJK_RE = re.compile(r'[\uAC00-\uD7AF\u3000-\u9FFF]')
+            if _CJK_RE.search(query):
+                # CJK text: fall back to normal substring
+                mask = texts_normalized.str.contains(
+                    re.escape(query), case=case, regex=True, na=False
+                )
+            else:
+                # Latin/non-CJK: use word boundary regex
+                word_pattern = r'\b' + re.escape(query) + r'\b'
+                mask = texts_normalized.str.contains(
+                    word_pattern, case=case, regex=True, na=False
+                )
+            if mask.any():
+                matched_texts = texts_normalized[mask]
+                q_len = len(query)
+                q_compare = query if case else query.lower()
+                t_compare = matched_texts if case else matched_texts.str.lower()
+                is_exact = t_compare == q_compare
                 lengths = matched_texts.str.len().replace(0, 1)
                 ratio_scores = 75 + 25 * (q_len / lengths)
                 sub_scores = np.where(is_exact, 100, ratio_scores)

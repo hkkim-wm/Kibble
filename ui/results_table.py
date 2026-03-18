@@ -5,9 +5,9 @@ from PyQt6.QtCore import (
     Qt, QAbstractTableModel, QModelIndex, pyqtSignal, QSize, QRectF,
     QSortFilterProxyModel,
 )
-from PyQt6.QtGui import QAction, QTextDocument, QPalette, QAbstractTextDocumentLayout
+from PyQt6.QtGui import QAction, QFont, QTextDocument, QPalette, QAbstractTextDocumentLayout
 from PyQt6.QtWidgets import (
-    QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout,
+    QTableView, QHeaderView, QMenu, QWidget, QVBoxLayout, QLabel,
     QRadioButton, QHBoxLayout, QButtonGroup, QComboBox, QApplication,
     QCheckBox, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
 )
@@ -295,6 +295,18 @@ class ResultsTableView(QWidget):
         self._wrap_cb.toggled.connect(self._on_wrap_toggled)
         toggle_layout.addWidget(self._wrap_cb)
 
+        # Font size control
+        self._font_size_label = QLabel(self._i18n.t("font_size") + ":")
+        toggle_layout.addWidget(self._font_size_label)
+        self._font_size_combo = QComboBox()
+        self._font_size_combo.addItems(["S", "M", "L", "XL"])
+        self._font_size_map = {"S": 10, "M": 12, "L": 14, "XL": 16}
+        self._font_size_combo.setCurrentIndex(1)  # Default: M (12)
+        self._font_size_combo.setFixedWidth(55)
+        self._font_size_combo.currentTextChanged.connect(self._on_font_size_changed)
+        toggle_layout.addWidget(self._font_size_combo)
+        self._current_font_size = 12
+
         layout.addLayout(toggle_layout)
 
         # Table view
@@ -370,6 +382,27 @@ class ResultsTableView(QWidget):
         self._lang_combo.setVisible(button_id == 0)
         mode = "three_column" if button_id == 0 else "source_target"
         self.view_mode_changed.emit(mode)
+
+    def _on_font_size_changed(self, size_label: str):
+        size = self._font_size_map.get(size_label, 12)
+        self._current_font_size = size
+        font = self._table.font()
+        font.setPointSize(size)
+        self._table.setFont(font)
+        self._table.viewport().update()
+
+    def get_font_size(self) -> int:
+        return self._current_font_size
+
+    def set_font_size(self, size: int):
+        self._current_font_size = size
+        # Find matching label
+        reverse_map = {v: k for k, v in self._font_size_map.items()}
+        label = reverse_map.get(size, "M")
+        self._font_size_combo.setCurrentText(label)
+        font = self._table.font()
+        font.setPointSize(size)
+        self._table.setFont(font)
 
     def _on_wrap_toggled(self, checked: bool):
         self._table.setWordWrap(checked)
@@ -469,3 +502,4 @@ class ResultsTableView(QWidget):
         self._three_col_radio.setText(self._i18n.t("three_col_view"))
         self._source_target_radio.setText(self._i18n.t("source_target_view"))
         self._wrap_cb.setText(self._i18n.t("word_wrap"))
+        self._font_size_label.setText(self._i18n.t("font_size") + ":")

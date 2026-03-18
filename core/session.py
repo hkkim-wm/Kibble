@@ -13,10 +13,13 @@ DEFAULT_SESSION: Dict[str, Any] = {
     "search_direction": "source",
     "view_mode": "source_target",
     "case_sensitive": False,
+    "whole_word": False,
+    "font_size": 12,
     "limit": 200,
     "window_size": [1200, 800],
     "window_position": [100, 100],
     "ui_language": "ko",
+    "splitter_sizes": [],
 }
 
 

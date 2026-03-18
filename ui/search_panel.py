@@ -44,6 +44,8 @@ class SearchPanel(QWidget):
         row2.addWidget(self._wildcard_cb)
         self._ignore_spaces_cb = QCheckBox(self._i18n.t("ignore_spaces"))
         row2.addWidget(self._ignore_spaces_cb)
+        self._whole_word_cb = QCheckBox(self._i18n.t("whole_word"))
+        row2.addWidget(self._whole_word_cb)
         row2.addStretch()
         main_layout.addLayout(row2)
 
@@ -129,6 +131,7 @@ class SearchPanel(QWidget):
             "case_sensitive": self._case_cb.isChecked(),
             "wildcards": self._wildcard_cb.isChecked(),
             "ignore_spaces": self._ignore_spaces_cb.isChecked(),
+            "whole_word": self._whole_word_cb.isChecked(),
             "direction": "source" if self._source_radio.isChecked() else "target",
             "filter_text": self._filter_box.text().strip(),
         })
@@ -158,6 +161,7 @@ class SearchPanel(QWidget):
             "threshold": self._threshold_slider.value(),
             "search_direction": "source" if self._source_radio.isChecked() else "target",
             "case_sensitive": self._case_cb.isChecked(),
+            "whole_word": self._whole_word_cb.isChecked(),
             "limit": self._limit_spin.value(),
         }
 
@@ -172,6 +176,7 @@ class SearchPanel(QWidget):
         else:
             self._source_radio.setChecked(True)
         self._case_cb.setChecked(config.get("case_sensitive", False))
+        self._whole_word_cb.setChecked(config.get("whole_word", False))
         self._limit_spin.setValue(config.get("limit", 200))
 
     def update_translations(self):
@@ -181,6 +186,7 @@ class SearchPanel(QWidget):
         self._case_cb.setText(self._i18n.t("case_sensitive"))
         self._wildcard_cb.setText(self._i18n.t("add_wildcards"))
         self._ignore_spaces_cb.setText(self._i18n.t("ignore_spaces"))
+        self._whole_word_cb.setText(self._i18n.t("whole_word"))
         self._source_radio.setText(self._i18n.t("search_in_source"))
         self._target_radio.setText(self._i18n.t("search_in_target"))
         self._mode_label.setText(self._i18n.t("match_mode") + ":")

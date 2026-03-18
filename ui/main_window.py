@@ -10,7 +10,7 @@ from PyQt6.QtGui import QShortcut, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QWidget, QFileDialog, QStatusBar,
     QLabel, QHBoxLayout, QPushButton, QMessageBox, QApplication,
-    QMenuBar,
+    QMenuBar, QSplitter,
 )
 
 from core.parser import detect_columns, check_entry_limit, normalize_column_name, classify_column
@@ -107,20 +107,32 @@ class MainWindow(QMainWindow):
         self._search_panel = SearchPanel(self._i18n)
         self._search_panel.search_requested.connect(self._on_search_requested)
         self._search_panel.filter_changed.connect(self._render_table)
-        layout.addWidget(self._search_panel)
 
         # File tabs
         self._file_tabs = FileTabs(self._i18n)
         self._file_tabs.file_closed.connect(self._on_file_closed)
         self._file_tabs.configure_requested.connect(self._on_configure_columns)
-        layout.addWidget(self._file_tabs)
+
+        # Top container: search panel + file tabs
+        top_widget = QWidget()
+        top_layout = QVBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.addWidget(self._search_panel)
+        top_layout.addWidget(self._file_tabs)
 
         # Results table
         self._table_model = ResultsTableModel(self._i18n)
         self._results_view = ResultsTableView(self._i18n)
         self._results_view.set_model(self._table_model)
         self._results_view.view_mode_changed.connect(self._on_view_mode_changed)
-        layout.addWidget(self._results_view, stretch=1)
+
+        # Splitter between search panel area and results table
+        self._splitter = QSplitter(Qt.Orientation.Vertical)
+        self._splitter.addWidget(top_widget)
+        self._splitter.addWidget(self._results_view)
+        self._splitter.setStretchFactor(0, 0)  # search panel doesn't stretch
+        self._splitter.setStretchFactor(1, 1)  # results table takes remaining space
+        layout.addWidget(self._splitter, stretch=1)
 
         # Toast notification
         self._toast = ToastNotification(central)
@@ -159,6 +171,9 @@ class MainWindow(QMainWindow):
         self._open_action.setShortcut("Ctrl+O")
         self._open_action.triggered.connect(self._open_file_dialog)
         file_menu.addAction(self._open_action)
+        self._open_folder_action = QAction(self._i18n.t("menu_open_folder"), self)
+        self._open_folder_action.triggered.connect(self._open_folder_dialog)
+        file_menu.addAction(self._open_folder_action)
         file_menu.addSeparator()
         self._exit_action = QAction(self._i18n.t("menu_exit"), self)
         self._exit_action.triggered.connect(self.close)
@@ -236,6 +251,7 @@ class MainWindow(QMainWindow):
         # Menu bar
         self._file_menu.setTitle(self._i18n.t("menu_file"))
         self._open_action.setText(self._i18n.t("menu_open"))
+        self._open_folder_action.setText(self._i18n.t("menu_open_folder"))
         self._exit_action.setText(self._i18n.t("menu_exit"))
         self._help_menu.setTitle(self._i18n.t("menu_help"))
         self._about_action.setText(self._i18n.t("menu_about"))
@@ -272,6 +288,19 @@ class MainWindow(QMainWindow):
         )
         if paths:
             self._load_files(paths)
+
+    def _open_folder_dialog(self):
+        folder = QFileDialog.getExistingDirectory(self, self._i18n.t("menu_open_folder"), "")
+        if folder:
+            supported_exts = (".xlsx", ".csv", ".txt")
+            file_paths = [
+                os.path.join(folder, f)
+                for f in os.listdir(folder)
+                if os.path.isfile(os.path.join(folder, f))
+                and f.lower().endswith(supported_exts)
+            ]
+            if file_paths:
+                self._load_files(file_paths)
 
     def _on_files_dropped(self, paths: list):
         self._load_files(paths)
@@ -422,6 +451,7 @@ class MainWindow(QMainWindow):
             case_sensitive=config["case_sensitive"],
             wildcards=config["wildcards"],
             ignore_spaces=config.get("ignore_spaces", False),
+            whole_word=config.get("whole_word", False),
         )
 
         self._search_texts = texts
@@ -709,6 +739,10 @@ class MainWindow(QMainWindow):
 
     def _restore_session(self, session: dict):
         self._search_panel.restore_config(session)
+        self._results_view.set_font_size(session.get("font_size", 12))
+        splitter_sizes = session.get("splitter_sizes", [])
+        if splitter_sizes:
+            self._splitter.setSizes(splitter_sizes)
         self._column_mappings = session.get("column_mappings", {})
         # Rebuild normalized target mappings for sessions saved before this feature
         for path, mapping in self._column_mappings.items():
@@ -730,9 +764,11 @@ class MainWindow(QMainWindow):
             "last_files": list(self._loaded_files.keys()),
             "column_mappings": self._column_mappings,
             "view_mode": self._results_view.get_view_mode(),
+            "font_size": self._results_view.get_font_size(),
             "window_size": [self.width(), self.height()],
             "window_position": [self.x(), self.y()],
             "ui_language": self._i18n.language,
+            "splitter_sizes": self._splitter.sizes(),
         }
         self._session.save(session)
 
