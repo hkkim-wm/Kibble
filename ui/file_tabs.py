@@ -28,6 +28,9 @@ class FileTabs(QWidget):
         self._tabs.currentChanged.connect(self._on_tab_changed)
         self._tabs.tabCloseRequested.connect(self._on_tab_close_requested)
 
+        # Hide the tab content area — we only use the tab bar for navigation
+        self._tabs.setStyleSheet("QTabWidget::pane { border: none; max-height: 0px; }")
+
         # "Search All" tab (always first, not closable)
         self._tabs.addTab(QWidget(), self._i18n.t("search_all"))
         self._tabs.tabBar().setTabButton(0, self._tabs.tabBar().ButtonPosition.RightSide, None)

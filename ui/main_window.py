@@ -25,26 +25,8 @@ from ui.column_mapper import ColumnMapperDialog
 from workers.parse_worker import ParseWorker
 from workers.search_worker import SearchWorker
 
-APP_VERSION = "1.1"
+APP_VERSION = "2.0"
 HANGUL_RE = re.compile(r"[\uAC00-\uD7AF]")
-
-# Dog fetch animation frames
-DOG_FRAMES = [
-    "\U0001F415 \u2022        ",
-    "\U0001F415  \u2022       ",
-    "\U0001F415   \u2022      ",
-    "\U0001F415    \u2022     ",
-    "\U0001F415     \u2022    ",
-    "\U0001F415      \u2022   ",
-    "\U0001F415       \u2022  ",
-    "\U0001F415        \u2022 ",
-    "\U0001F415       \u2022  ",
-    "\U0001F415      \u2022   ",
-    "\U0001F415     \u2022    ",
-    "\U0001F415    \u2022     ",
-    "\U0001F415   \u2022      ",
-    "\U0001F415  \u2022       ",
-]
 
 
 GLOBAL_HOTKEY = "ctrl+shift+k"
@@ -76,12 +58,8 @@ class MainWindow(QMainWindow):
         self._last_search_query: str = ""
         self._last_filter_text: str = ""
 
-        # Search animation state
+        # Search timing
         self._search_start_time: float = 0
-        self._anim_frame: int = 0
-        self._anim_timer = QTimer(self)
-        self._anim_timer.setInterval(150)
-        self._anim_timer.timeout.connect(self._update_search_animation)
 
         # Session
         exe_dir = os.path.dirname(os.path.abspath(__file__))
@@ -98,6 +76,38 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Kibble")
         self.resize(1200, 800)
         self.setAcceptDrops(True)
+
+        # Kibble theme — warm, professional palette
+        self.setStyleSheet("""
+            QMainWindow { background: #FAFAF8; }
+            QMenuBar { background: #5B4A3F; color: #F5F0EB; padding: 2px; }
+            QMenuBar::item:selected { background: #7A6555; border-radius: 3px; }
+            QMenu { background: #FAFAF8; border: 1px solid #D4C8BC; }
+            QMenu::item:selected { background: #E8DDD3; }
+            QTabWidget::tab-bar { alignment: left; }
+            QTabBar::tab { background: #EDE7E0; color: #5B4A3F; padding: 6px 14px;
+                           border: 1px solid #D4C8BC; border-bottom: none;
+                           border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
+            QTabBar::tab:selected { background: #FAFAF8; font-weight: bold; }
+            QTabBar::tab:hover { background: #F5F0EB; }
+            QPushButton { background: #5B4A3F; color: #F5F0EB; border: none;
+                          padding: 5px 12px; border-radius: 3px; }
+            QPushButton:hover { background: #7A6555; }
+            QPushButton:pressed { background: #4A3B32; }
+            QLineEdit, QComboBox, QSpinBox { border: 1px solid #D4C8BC; border-radius: 3px;
+                                              padding: 4px 6px; background: white; }
+            QLineEdit:focus, QComboBox:focus { border-color: #8B7355; }
+            QCheckBox, QRadioButton { color: #3D3028; }
+            QTableView { gridline-color: #E8E0D8; alternate-background-color: #F9F6F2;
+                         selection-background-color: #D4C8BC; selection-color: #3D3028; }
+            QHeaderView::section { background: #EDE7E0; color: #5B4A3F; padding: 4px;
+                                   border: 1px solid #D4C8BC; font-weight: bold; }
+            QStatusBar { background: #EDE7E0; color: #5B4A3F; }
+            QSlider::groove:horizontal { background: #D4C8BC; height: 4px; border-radius: 2px; }
+            QSlider::handle:horizontal { background: #8B7355; width: 12px; height: 12px;
+                                         margin: -4px 0; border-radius: 6px; }
+            QLabel { color: #3D3028; }
+        """)
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -139,12 +149,10 @@ class MainWindow(QMainWindow):
         self._lang_btn.setFixedWidth(100)
         self._lang_btn.clicked.connect(self._toggle_language)
         status_bar.addWidget(self._lang_btn)
-        self._drop_hint = QLabel(f"\U0001F415 {self._i18n.t('drop_hint')}")
+        self._drop_hint = QLabel(self._i18n.t('drop_hint'))
         status_bar.addWidget(self._drop_hint, stretch=1)
-        # Search animation label (hidden by default)
-        self._search_anim_label = QLabel("")
-        self._search_anim_label.setVisible(False)
-        status_bar.addWidget(self._search_anim_label)
+        self._search_status = QLabel("")
+        status_bar.addWidget(self._search_status)
         self._hotkey_hint = QLabel(self._i18n.t("global_hotkey"))
         self._hotkey_hint.setStyleSheet("color: #888; font-size: 11px;")
         status_bar.addPermanentWidget(self._hotkey_hint)
@@ -250,22 +258,11 @@ class MainWindow(QMainWindow):
 
     def _start_search_animation(self):
         self._search_start_time = time.time()
-        self._anim_frame = 0
-        self._search_anim_label.setVisible(True)
-        self._search_anim_label.setText(DOG_FRAMES[0] + " 0.0s")
-        self._anim_timer.start()
-
-    def _update_search_animation(self):
-        elapsed = time.time() - self._search_start_time
-        self._anim_frame = (self._anim_frame + 1) % len(DOG_FRAMES)
-        self._search_anim_label.setText(f"{DOG_FRAMES[self._anim_frame]} {elapsed:.1f}s")
+        self._search_status.setText(self._i18n.t("searching"))
 
     def _stop_search_animation(self):
-        self._anim_timer.stop()
         elapsed = time.time() - self._search_start_time
-        self._search_anim_label.setText(f"\U0001F415 \u2714 {elapsed:.2f}s")
-        # Hide after 3 seconds
-        QTimer.singleShot(3000, lambda: self._search_anim_label.setVisible(False))
+        self._search_status.setText(f"{elapsed:.2f}s")
 
     # --- File loading ---
 
