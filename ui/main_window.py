@@ -77,37 +77,8 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.setAcceptDrops(True)
 
-        # Kibble theme — warm, professional palette
-        self.setStyleSheet("""
-            QMainWindow { background: #FAFAF8; }
-            QMenuBar { background: #5B4A3F; color: #F5F0EB; padding: 2px; }
-            QMenuBar::item:selected { background: #7A6555; border-radius: 3px; }
-            QMenu { background: #FAFAF8; border: 1px solid #D4C8BC; }
-            QMenu::item:selected { background: #E8DDD3; }
-            QTabWidget::tab-bar { alignment: left; }
-            QTabBar::tab { background: #EDE7E0; color: #5B4A3F; padding: 6px 14px;
-                           border: 1px solid #D4C8BC; border-bottom: none;
-                           border-top-left-radius: 4px; border-top-right-radius: 4px; margin-right: 2px; }
-            QTabBar::tab:selected { background: #FAFAF8; font-weight: bold; }
-            QTabBar::tab:hover { background: #F5F0EB; }
-            QPushButton { background: #5B4A3F; color: #F5F0EB; border: none;
-                          padding: 5px 12px; border-radius: 3px; }
-            QPushButton:hover { background: #7A6555; }
-            QPushButton:pressed { background: #4A3B32; }
-            QLineEdit, QComboBox, QSpinBox { border: 1px solid #D4C8BC; border-radius: 3px;
-                                              padding: 4px 6px; background: white; }
-            QLineEdit:focus, QComboBox:focus { border-color: #8B7355; }
-            QCheckBox, QRadioButton { color: #3D3028; }
-            QTableView { gridline-color: #E8E0D8; alternate-background-color: #F9F6F2;
-                         selection-background-color: #D4C8BC; selection-color: #3D3028; }
-            QHeaderView::section { background: #EDE7E0; color: #5B4A3F; padding: 4px;
-                                   border: 1px solid #D4C8BC; font-weight: bold; }
-            QStatusBar { background: #EDE7E0; color: #5B4A3F; }
-            QSlider::groove:horizontal { background: #D4C8BC; height: 4px; border-radius: 2px; }
-            QSlider::handle:horizontal { background: #8B7355; width: 12px; height: 12px;
-                                         margin: -4px 0; border-radius: 6px; }
-            QLabel { color: #3D3028; }
-        """)
+        # Dark mode state
+        self._dark_mode = False
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -143,21 +114,15 @@ class MainWindow(QMainWindow):
         self._drop_filter.invalid_files_dropped.connect(self._on_invalid_files_dropped)
         self.installEventFilter(self._drop_filter)
 
-        # Status bar
+        # Status bar — clean layout
         status_bar = QStatusBar()
-        self._lang_btn = QPushButton("EN | 한국어")
-        self._lang_btn.setFixedWidth(100)
-        self._lang_btn.clicked.connect(self._toggle_language)
-        status_bar.addWidget(self._lang_btn)
         self._drop_hint = QLabel(self._i18n.t('drop_hint'))
         status_bar.addWidget(self._drop_hint, stretch=1)
         self._search_status = QLabel("")
-        status_bar.addWidget(self._search_status)
-        self._hotkey_hint = QLabel(self._i18n.t("global_hotkey"))
+        status_bar.addPermanentWidget(self._search_status)
+        self._hotkey_hint = QLabel(self._i18n.t("global_hotkey_desc"))
         self._hotkey_hint.setStyleSheet("color: #888; font-size: 11px;")
         status_bar.addPermanentWidget(self._hotkey_hint)
-        self._status_info = QLabel(f"Kibble v{APP_VERSION}")
-        status_bar.addPermanentWidget(self._status_info)
         self.setStatusBar(status_bar)
 
     def _setup_menu_bar(self):
@@ -178,12 +143,29 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._exit_action)
         self._file_menu = file_menu
 
-        # Help menu
-        help_menu = menu_bar.addMenu(self._i18n.t("menu_help"))
+        # Settings menu
+        settings_menu = menu_bar.addMenu(self._i18n.t("menu_settings"))
+
+        # Language toggle
+        self._lang_action = QAction(self._i18n.t("menu_lang_toggle"), self)
+        self._lang_action.triggered.connect(self._toggle_language)
+        settings_menu.addAction(self._lang_action)
+
+        # Dark mode toggle
+        self._dark_mode_action = QAction(self._i18n.t("menu_dark_mode"), self)
+        self._dark_mode_action.setCheckable(True)
+        self._dark_mode_action.setChecked(False)
+        self._dark_mode_action.triggered.connect(self._toggle_dark_mode)
+        settings_menu.addAction(self._dark_mode_action)
+
+        settings_menu.addSeparator()
+
+        # About
         self._about_action = QAction(self._i18n.t("menu_about"), self)
         self._about_action.triggered.connect(self._show_about_dialog)
-        help_menu.addAction(self._about_action)
-        self._help_menu = help_menu
+        settings_menu.addAction(self._about_action)
+
+        self._settings_menu = settings_menu
 
     def _show_about_dialog(self):
         QMessageBox.about(
@@ -191,6 +173,45 @@ class MainWindow(QMainWindow):
             self._i18n.t("about_title"),
             self._i18n.t("about_text", version=APP_VERSION),
         )
+
+    def _toggle_dark_mode(self):
+        self._dark_mode = not self._dark_mode
+        self._dark_mode_action.setChecked(self._dark_mode)
+        self._apply_theme()
+
+    def _apply_theme(self):
+        if self._dark_mode:
+            self.setStyleSheet("""
+                QMainWindow, QWidget { background: #2B2B2B; color: #E0E0E0; }
+                QMenuBar { background: #333; color: #E0E0E0; }
+                QMenuBar::item:selected { background: #505050; }
+                QMenu { background: #3C3C3C; color: #E0E0E0; border: 1px solid #555; }
+                QMenu::item:selected { background: #505050; }
+                QTabBar::tab { background: #3C3C3C; color: #CCC; padding: 6px 14px;
+                               border: 1px solid #555; border-bottom: none;
+                               border-top-left-radius: 4px; border-top-right-radius: 4px; }
+                QTabBar::tab:selected { background: #2B2B2B; color: #FFF; font-weight: bold; }
+                QTabBar::tab:hover { background: #454545; }
+                QPushButton { background: #505050; color: #E0E0E0; border: 1px solid #666;
+                              padding: 5px 12px; border-radius: 3px; }
+                QPushButton:hover { background: #606060; }
+                QLineEdit, QComboBox, QSpinBox { background: #3C3C3C; color: #E0E0E0;
+                    border: 1px solid #555; border-radius: 3px; padding: 4px 6px; }
+                QLineEdit:focus, QComboBox:focus { border-color: #7A9EC2; }
+                QCheckBox, QRadioButton { color: #E0E0E0; }
+                QTableView { background: #2B2B2B; color: #E0E0E0; gridline-color: #444;
+                    alternate-background-color: #323232;
+                    selection-background-color: #4A6A8A; selection-color: #FFF; }
+                QHeaderView::section { background: #3C3C3C; color: #E0E0E0; padding: 4px;
+                    border: 1px solid #555; font-weight: bold; }
+                QStatusBar { background: #333; color: #CCC; }
+                QLabel { color: #E0E0E0; }
+                QSlider::groove:horizontal { background: #555; height: 4px; border-radius: 2px; }
+                QSlider::handle:horizontal { background: #7A9EC2; width: 12px; height: 12px;
+                    margin: -4px 0; border-radius: 6px; }
+            """)
+        else:
+            self.setStyleSheet("")
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+F"), self, self._search_panel.focus_search)
@@ -244,14 +265,16 @@ class MainWindow(QMainWindow):
         self._search_panel.update_translations()
         self._file_tabs.update_translations()
         self._results_view.update_translations()
-        self._drop_hint.setText(f"\U0001F415 {self._i18n.t('drop_hint')}")
-        self._hotkey_hint.setText(self._i18n.t("global_hotkey"))
+        self._drop_hint.setText(self._i18n.t('drop_hint'))
+        self._hotkey_hint.setText(self._i18n.t("global_hotkey_desc"))
         # Menu bar
         self._file_menu.setTitle(self._i18n.t("menu_file"))
         self._open_action.setText(self._i18n.t("menu_open"))
         self._open_folder_action.setText(self._i18n.t("menu_open_folder"))
         self._exit_action.setText(self._i18n.t("menu_exit"))
-        self._help_menu.setTitle(self._i18n.t("menu_help"))
+        self._settings_menu.setTitle(self._i18n.t("menu_settings"))
+        self._lang_action.setText(self._i18n.t("menu_lang_toggle"))
+        self._dark_mode_action.setText(self._i18n.t("menu_dark_mode"))
         self._about_action.setText(self._i18n.t("menu_about"))
 
     # --- Search animation ---
@@ -722,6 +745,9 @@ class MainWindow(QMainWindow):
         self.move(pos[0], pos[1])
         lang = session.get("ui_language", "ko")
         self._i18n.set_language(lang)
+        self._dark_mode = session.get("dark_mode", False)
+        self._dark_mode_action.setChecked(self._dark_mode)
+        self._apply_theme()
         self._update_all_translations()
 
     def _restore_session(self, session: dict):
@@ -752,6 +778,7 @@ class MainWindow(QMainWindow):
             "window_size": [self.width(), self.height()],
             "window_position": [self.x(), self.y()],
             "ui_language": self._i18n.language,
+            "dark_mode": self._dark_mode,
         }
         self._session.save(session)
 

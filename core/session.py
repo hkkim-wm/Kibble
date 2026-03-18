@@ -19,7 +19,7 @@ DEFAULT_SESSION: Dict[str, Any] = {
     "window_size": [1200, 800],
     "window_position": [100, 100],
     "ui_language": "ko",
-    "splitter_sizes": [],
+    "dark_mode": False,
 }
 
 
