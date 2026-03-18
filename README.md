@@ -4,7 +4,7 @@
 
 **두 가지 버전**으로 제공됩니다:
 - **데스크톱** — Windows 포터블 exe (PyQt6)
-- **웹** — 브라우저에서 사용 (`start.bat` 더블클릭으로 실행)
+- **웹** — 브라우저에서 바로 사용: https://hkkim-wm.github.io/Kibble/
 
 ## 기능
 
