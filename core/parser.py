@@ -6,16 +6,16 @@ import chardet
 import pandas as pd
 
 LANG_PATTERNS = {
-    "KO": re.compile(r"^(KO|Korean|한국어|ko-KR|kor)$", re.IGNORECASE),
+    "KO": re.compile(r"^(KO|Korean|한국어|ko-KR|kor|Source)$", re.IGNORECASE),
     "EN": re.compile(r"^(EN|English|영어|en-US|en-GB|eng)$", re.IGNORECASE),
     "JP": re.compile(r"^(JP|JA|Japanese|일본어|ja-JP|jpn)$", re.IGNORECASE),
     # Chinese Traditional (Taiwan) and Simplified (PRC) as separate targets
-    "CT": re.compile(r"^(CT|CHT|zh-TW|Chinese[\s_\-]?Traditional|Chinese[\s_\-]?\(?\s*Taiwan\s*\)?|중국어[\s_\-]?번체|繁體中文)$", re.IGNORECASE),
-    "CS": re.compile(r"^(CS|CHS|zh-CN|Chinese[\s_\-]?Simplified|Chinese[\s_\-]?\(?\s*PRC\s*\)?|중국어[\s_\-]?간체|简体中文)$", re.IGNORECASE),
+    "CT": re.compile(r"^(CT|CHT|zh-TW|zh-Hant|TW|Chinese[\s_\-]?Traditional|Chinese[\s_\-]?\(?\s*Taiwan\s*\)?|중국어[\s_\-]?번체|繁體中文)$", re.IGNORECASE),
+    "CS": re.compile(r"^(CS|CHS|zh-CN|zh-Hans|Chinese[\s_\-]?Simplified|Chinese[\s_\-]?\(?\s*PRC\s*\)?|중국어[\s_\-]?간체|简体中文)$", re.IGNORECASE),
     "ZH": re.compile(r"^(ZH|Chinese|중국어|zho)$", re.IGNORECASE),
     "DE": re.compile(r"^(DE|German|독일어|de-DE|deu)$", re.IGNORECASE),
     "FR": re.compile(r"^(FR|French|프랑스어|fr-FR|fra)$", re.IGNORECASE),
-    "ES": re.compile(r"^(ES|Spanish|스페인어|es-ES|spa)$", re.IGNORECASE),
+    "ES": re.compile(r"^(ES|Spanish|스페인어|es-ES|spa|ES-LATAM|Spanish[\s_\-]?\(?\s*Latin\s*America\s*\)?)$", re.IGNORECASE),
     "PT": re.compile(r"^(PT|Portuguese|Portuguese[\s_\-]?\(?\s*Brazil\s*\)?|포르투갈어|pt-BR|pt-PT|por)$", re.IGNORECASE),
     "IT": re.compile(r"^(IT|Italian|이탈리아어|it-IT|ita)$", re.IGNORECASE),
     "RU": re.compile(r"^(RU|Russian|러시아어|ru-RU|rus)$", re.IGNORECASE),

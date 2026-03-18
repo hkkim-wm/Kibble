@@ -1,5 +1,30 @@
 # 변경 이력
 
+## v2.0 — 2026-03-18
+
+### 새로운 기능
+- **웹 버전 추가** — 브라우저에서 바로 사용할 수 있는 Kibble Web. 서버 불필요, 단일 HTML 파일로 배포 가능. 데스크톱과 동일한 기능 제공 (전역 단축키 제외).
+  - React 18 + TypeScript + Tailwind CSS 기반
+  - 가상 스크롤 (@tanstack/react-virtual) — 대용량 결과도 부드럽게 표시
+  - Web Worker로 백그라운드 검색 (메인 스레드 fallback 포함)
+  - 세션 저장 (localStorage)
+  - `vite-plugin-singlefile`로 단일 HTML 빌드 — `file://`에서도 동작
+  - 65개 단위 테스트 (parser, search, session, i18n)
+
+### 개선 사항
+- **언어 헤더 확장** — 새로운 컬럼 헤더 인식 추가:
+  - KO: `Source`
+  - CT: `zh-Hant`, `TW`
+  - CS: `zh-Hans`
+  - ES: `ES-LATAM`, `Spanish (Latin America)`
+- **파일 간 열 병합 개선** (웹) — 열 이름을 정규화하여 다른 파일의 "English"와 "EN"을 동일 열로 통합
+- **열 너비 조절** (웹) — 헤더 경계 드래그로 열 너비 조절 가능
+- **가로 스크롤** (웹) — 열이 많을 때 잘리지 않고 가로 스크롤 지원
+- **고정 헤더** (웹) — 세로 스크롤 시 테이블 헤더 상단 고정
+
+### 버그 수정
+- **퍼지 스코어 수정** (웹) — token_set_ratio 제거. 부분 일치 시 100%로 부풀려지던 문제 해결. 데스크톱과 동일하게 fuzz.ratio (Levenshtein)만 사용.
+
 ## v1.1 — 2026-03-17
 
 ### 새로운 기능

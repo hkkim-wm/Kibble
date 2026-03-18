@@ -644,22 +644,37 @@ class MainWindow(QMainWindow):
         self._render_table()
 
     def _get_ordered_targets(self) -> list:
-        """Collect normalized target columns: file-order languages, then info, then metadata."""
+        """Collect normalized target columns: file-order languages, then info, then metadata.
+
+        Processes the file with the most targets first so its column order
+        becomes the canonical ordering. Additional targets from other files
+        are inserted at the correct position relative to their neighbours.
+        """
+        # Sort mappings: most targets first to establish the best base order
+        mappings = sorted(
+            self._column_mappings.values(),
+            key=lambda m: len(m.get("targets", [])),
+            reverse=True,
+        )
         seen = set()
         langs, info, meta = [], [], []
-        for mapping in self._column_mappings.values():
+        for mapping in mappings:
             target_norm = mapping.get("target_norm", {})
-            for t in mapping.get("targets", []):
-                norm = target_norm.get(t, t)
-                if norm not in seen:
-                    seen.add(norm)
-                    cls = classify_column(norm)
-                    if cls == 0:
-                        langs.append(norm)
-                    elif cls == 1:
-                        info.append(norm)
-                    else:
-                        meta.append(norm)
+            norms = [target_norm.get(t, t) for t in mapping.get("targets", [])]
+            for i, norm in enumerate(norms):
+                if norm in seen:
+                    continue
+                seen.add(norm)
+                cls = classify_column(norm)
+                bucket = langs if cls == 0 else info if cls == 1 else meta
+                # Insert after the last already-added predecessor from this file
+                insert_pos = len(bucket)
+                for j in range(i - 1, -1, -1):
+                    prev = norms[j]
+                    if prev in bucket:
+                        insert_pos = bucket.index(prev) + 1
+                        break
+                bucket.insert(insert_pos, norm)
         return langs + info + meta
 
     # --- Status ---
