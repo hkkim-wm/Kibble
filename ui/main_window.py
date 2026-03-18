@@ -180,38 +180,39 @@ class MainWindow(QMainWindow):
         self._apply_theme()
 
     def _apply_theme(self):
+        # Notify the highlight delegate about dark mode
+        if hasattr(self._results_view, '_highlight_delegate'):
+            self._results_view._highlight_delegate.set_dark_mode(self._dark_mode)
+
         if self._dark_mode:
+            # Colors only — no padding, margin, or border-radius to avoid layout shifts
             self.setStyleSheet("""
-                QMainWindow, QWidget { background: #2B2B2B; color: #E0E0E0; }
-                QMenuBar { background: #333; color: #E0E0E0; }
+                * { color: #E0E0E0; }
+                QMainWindow, QWidget { background: #2B2B2B; }
+                QMenuBar { background: #333; }
                 QMenuBar::item:selected { background: #505050; }
-                QMenu { background: #3C3C3C; color: #E0E0E0; border: 1px solid #555; }
+                QMenu { background: #3C3C3C; border-color: #555; }
                 QMenu::item:selected { background: #505050; }
-                QTabBar::tab { background: #3C3C3C; color: #CCC; padding: 6px 14px;
-                               border: 1px solid #555; border-bottom: none;
-                               border-top-left-radius: 4px; border-top-right-radius: 4px; }
-                QTabBar::tab:selected { background: #2B2B2B; color: #FFF; font-weight: bold; }
+                QTabBar::tab { background: #3C3C3C; color: #CCC; border-color: #555; }
+                QTabBar::tab:selected { background: #2B2B2B; color: #FFF; }
                 QTabBar::tab:hover { background: #454545; }
-                QPushButton { background: #505050; color: #E0E0E0; border: 1px solid #666;
-                              padding: 5px 12px; border-radius: 3px; }
+                QPushButton { background: #505050; color: #E0E0E0; border-color: #666; }
                 QPushButton:hover { background: #606060; }
-                QLineEdit, QComboBox, QSpinBox { background: #3C3C3C; color: #E0E0E0;
-                    border: 1px solid #555; border-radius: 3px; padding: 4px 6px; }
+                QLineEdit, QComboBox, QSpinBox { background: #3C3C3C; color: #E0E0E0; border-color: #555; }
                 QLineEdit:focus, QComboBox:focus { border-color: #7A9EC2; }
-                QCheckBox, QRadioButton { color: #E0E0E0; }
+                QComboBox QAbstractItemView { background: #3C3C3C; color: #E0E0E0; selection-background-color: #505050; }
                 QTableView { background: #2B2B2B; color: #E0E0E0; gridline-color: #444;
                     alternate-background-color: #323232;
                     selection-background-color: #4A6A8A; selection-color: #FFF; }
-                QHeaderView::section { background: #3C3C3C; color: #E0E0E0; padding: 4px;
-                    border: 1px solid #555; font-weight: bold; }
+                QHeaderView::section { background: #3C3C3C; color: #E0E0E0; border-color: #555; }
                 QStatusBar { background: #333; color: #CCC; }
-                QLabel { color: #E0E0E0; }
-                QSlider::groove:horizontal { background: #555; height: 4px; border-radius: 2px; }
-                QSlider::handle:horizontal { background: #7A9EC2; width: 12px; height: 12px;
-                    margin: -4px 0; border-radius: 6px; }
             """)
         else:
             self.setStyleSheet("")
+
+        # Repaint table to update highlight colors
+        if hasattr(self._results_view, '_table'):
+            self._results_view._table.viewport().update()
 
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("Ctrl+F"), self, self._search_panel.focus_search)

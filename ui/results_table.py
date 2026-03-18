@@ -25,15 +25,28 @@ class HighlightDelegate(QStyledItemDelegate):
     """
 
     # Light tint for target cells that are translation pairs of matched source
-    TARGET_TINT = "#FFF9C4"  # Very light yellow
+    TARGET_TINT_LIGHT = "#FFF9C4"  # Very light yellow
+    TARGET_TINT_DARK = "#3D3520"   # Dark muted yellow
+
+    # Highlight colors per mode
+    SEARCH_HL_LIGHT = "#FFEB3B"    # Yellow on light
+    SEARCH_HL_DARK = "#806D15"     # Muted gold on dark
+    FILTER_HL_LIGHT = "#81D4FA"    # Light blue on light
+    FILTER_HL_DARK = "#1A5276"     # Muted blue on dark
+    CONFLICT_LIGHT = "#FFCCBC"     # Light orange on light
+    CONFLICT_DARK = "#5C2E1A"      # Muted orange on dark
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._search_query = ""
         self._filter_query = ""
-        self._highlight_columns: set = set()  # All non-meta column indices
-        self._source_columns: set = set()     # Source column indices
-        self._target_columns: set = set()     # Target column indices
+        self._highlight_columns: set = set()
+        self._source_columns: set = set()
+        self._target_columns: set = set()
+        self._dark_mode = False
+
+    def set_dark_mode(self, dark: bool):
+        self._dark_mode = dark
 
     def set_queries(self, search_query: str = "", filter_query: str = ""):
         self._search_query = search_query
@@ -57,18 +70,22 @@ class HighlightDelegate(QStyledItemDelegate):
             .replace("<", "&lt;")
             .replace(">", "&gt;")
         )
-        # Apply search query highlight (yellow)
+        # Pick colors based on mode — highlighted text is always dark for readability
+        search_bg = self.SEARCH_HL_DARK if self._dark_mode else self.SEARCH_HL_LIGHT
+        search_fg = "#FFF" if self._dark_mode else "#000"
+        filter_bg = self.FILTER_HL_DARK if self._dark_mode else self.FILTER_HL_LIGHT
+        filter_fg = "#FFF" if self._dark_mode else "#000"
+
         if self._search_query:
             pattern = re.compile(re.escape(self._search_query), re.IGNORECASE)
             escaped = pattern.sub(
-                lambda m: f'<span style="background-color:#FFEB3B;padding:0 1px">{m.group()}</span>',
+                lambda m: f'<span style="background-color:{search_bg};color:{search_fg};padding:0 1px">{m.group()}</span>',
                 escaped,
             )
-        # Apply filter query highlight (light blue)
         if self._filter_query:
             pattern = re.compile(re.escape(self._filter_query), re.IGNORECASE)
             escaped = pattern.sub(
-                lambda m: f'<span style="background-color:#81D4FA;padding:0 1px">{m.group()}</span>',
+                lambda m: f'<span style="background-color:{filter_bg};color:{filter_fg};padding:0 1px">{m.group()}</span>',
                 escaped,
             )
         return escaped
@@ -120,9 +137,9 @@ class HighlightDelegate(QStyledItemDelegate):
         elif conflict_bg is not None:
             painter.fillRect(option.rect, conflict_bg)
         elif is_target_cell and not has_substring_match:
-            # Light tint for target cells without literal match
             from PyQt6.QtGui import QColor
-            painter.fillRect(option.rect, QColor(self.TARGET_TINT))
+            tint = self.TARGET_TINT_DARK if self._dark_mode else self.TARGET_TINT_LIGHT
+            painter.fillRect(option.rect, QColor(tint))
         else:
             painter.fillRect(option.rect, option.palette.base())
 
