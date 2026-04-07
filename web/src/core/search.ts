@@ -1,5 +1,19 @@
 import { distance as levenshteinDistance } from 'fastest-levenshtein';
 
+// --- Normalization for fuzzy matching (ported from l10n-LLM QA pipeline) ---
+const INLINE_TAG_RE = /<[^>]+>/g;      // <color>, <Text_Yellow02>, </>
+const VARIABLE_RE = /\{[^}]+\}/g;       // {0}, {player_name}
+const MULTI_SPACE_RE = /\s+/g;
+const TRAILING_PUNCT_RE = /[.,!?;:~…]+$/;
+
+export function normalizeForMatching(text: string): string {
+  let t = text.replace(INLINE_TAG_RE, '');
+  t = t.replace(VARIABLE_RE, '');
+  t = t.replace(MULTI_SPACE_RE, ' ');
+  t = t.trim().replace(TRAILING_PUNCT_RE, '');
+  return t;
+}
+
 export interface SearchConfig {
   query: string;
   mode: 'substring' | 'fuzzy' | 'both';
@@ -96,13 +110,15 @@ function levenshteinRatio(a: string, b: string): number {
 
 /**
  * Score a query against text using fuzzy matching.
- * Uses only levenshteinRatio (equivalent to RapidFuzz fuzz.ratio).
- * token_set_ratio is intentionally NOT used — it inflates scores when
- * query tokens are a subset of text tokens (same as desktop decision).
+ * Normalizes both strings (strips tags, variables, punctuation) before
+ * comparing. Uses levenshteinRatio (equivalent to RapidFuzz fuzz.ratio).
  */
 export function fuzzyScore(query: string, text: string): number {
   if (!query || !text) return 0;
-  return levenshteinRatio(query.toLowerCase(), text.toLowerCase());
+  const nq = normalizeForMatching(query).toLowerCase();
+  const nt = normalizeForMatching(text).toLowerCase();
+  if (!nq || !nt) return 0;
+  return levenshteinRatio(nq, nt);
 }
 
 /**

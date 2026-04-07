@@ -3,6 +3,7 @@ import {
   substringScore,
   fuzzyScore,
   search,
+  normalizeForMatching,
   SearchConfig,
   SearchResult,
 } from '../src/core/search';
@@ -236,5 +237,52 @@ describe('search', () => {
         expect(results[i].score).toBeLessThan(results[i - 1].score);
       }
     }
+  });
+});
+
+describe('normalizeForMatching', () => {
+  it('strips inline tags', () => {
+    expect(normalizeForMatching('Press <color>Start</color>')).toBe('Press Start');
+  });
+
+  it('strips variables', () => {
+    expect(normalizeForMatching('{player_name} won {0} gold')).toBe('won gold');
+  });
+
+  it('collapses whitespace', () => {
+    expect(normalizeForMatching('hello   world')).toBe('hello world');
+  });
+
+  it('strips trailing punctuation', () => {
+    expect(normalizeForMatching('Continue...')).toBe('Continue');
+    expect(normalizeForMatching('확인!')).toBe('확인');
+  });
+
+  it('handles combined normalization', () => {
+    expect(normalizeForMatching('<b>{0}개</b> 획득!')).toBe('개 획득');
+  });
+
+  it('returns empty for empty input', () => {
+    expect(normalizeForMatching('')).toBe('');
+  });
+
+  it('returns plain text unchanged', () => {
+    expect(normalizeForMatching('plain text')).toBe('plain text');
+  });
+});
+
+describe('fuzzyScore with normalization', () => {
+  it('scores strings with different tags as identical', () => {
+    expect(
+      fuzzyScore('<color>시작하기</color>', '<Text_Yellow02>시작하기</Text_Yellow02>'),
+    ).toBe(100);
+  });
+
+  it('scores strings with different variables as identical', () => {
+    expect(fuzzyScore('{player_name}의 승리', '{0}의 승리')).toBe(100);
+  });
+
+  it('ignores trailing punctuation differences', () => {
+    expect(fuzzyScore('계속하시겠습니까?', '계속하시겠습니까')).toBe(100);
   });
 });
