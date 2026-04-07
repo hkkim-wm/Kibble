@@ -6,6 +6,25 @@ import numpy as np
 import pandas as pd
 from rapidfuzz import fuzz, process
 
+# --- Normalization for fuzzy matching (ported from l10n-LLM QA pipeline) ---
+_INLINE_TAG_RE = re.compile(r'<[^>]+>')       # <color>, <Text_Yellow02>, </>
+_VARIABLE_RE = re.compile(r'\{[^}]+\}')        # {0}, {player_name}
+_MULTI_SPACE_RE = re.compile(r'\s+')
+
+
+def normalize_for_matching(text: str) -> str:
+    """Normalize text for fuzzy comparison.
+
+    Strips inline tags, variables, collapses whitespace, and strips
+    trailing punctuation. Only used for similarity scoring — original
+    text is preserved for display.
+    """
+    t = _INLINE_TAG_RE.sub('', text)
+    t = _VARIABLE_RE.sub('', t)
+    t = _MULTI_SPACE_RE.sub(' ', t)
+    t = t.strip().rstrip('.,!?;:~…')
+    return t
+
 
 @dataclass
 class SearchConfig:
@@ -56,11 +75,11 @@ def substring_score(query: str, text: str, case_sensitive: bool = False, wildcar
 def fuzzy_score(query: str, text: str) -> int:
     if not query or not text:
         return 0
-    # Use fuzz.ratio for strict full-string similarity.
-    # WRatio/token_set_ratio inflate scores when strings share
-    # even a single common token (e.g. "및") due to partial matching.
-    # fuzz.ratio compares entire strings honestly.
-    return int(fuzz.ratio(query, text))
+    nq = normalize_for_matching(query)
+    nt = normalize_for_matching(text)
+    if not nq or not nt:
+        return 0
+    return int(fuzz.ratio(nq, nt))
 
 
 def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
@@ -156,17 +175,20 @@ def search_vectorized(texts: pd.Series, config: SearchConfig) -> pd.DataFrame:
 
     # --- Fuzzy matching (RapidFuzz batch API) ---
     if config.mode in ("fuzzy", "both"):
-        texts_list = texts_normalized.tolist()
-        fuzzy_results = process.extract(
-            query_normalized,
-            texts_list,
-            scorer=fuzz.ratio,
-            limit=None,
-            score_cutoff=max(config.threshold, 1),  # Skip below threshold early
-        )
-        for text, score, idx in fuzzy_results:
-            if score > scores[idx]:
-                scores[idx] = score
+        # Normalize texts for fuzzy comparison (strip tags, variables, punctuation)
+        fuzzy_texts = texts_normalized.apply(normalize_for_matching).tolist()
+        fuzzy_query = normalize_for_matching(query_normalized)
+        if fuzzy_query:  # skip if normalization empties the query
+            fuzzy_results = process.extract(
+                fuzzy_query,
+                fuzzy_texts,
+                scorer=fuzz.ratio,
+                limit=None,
+                score_cutoff=max(config.threshold, 1),
+            )
+            for text, score, idx in fuzzy_results:
+                if score > scores[idx]:
+                    scores[idx] = score
 
     # Filter by threshold
     mask = scores >= config.threshold

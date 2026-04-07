@@ -1,5 +1,5 @@
 import pytest
-from core.search import substring_score, fuzzy_score, search, SearchConfig
+from core.search import substring_score, fuzzy_score, search, SearchConfig, normalize_for_matching
 
 
 class TestSubstringScore:
@@ -96,3 +96,44 @@ class TestSearch:
         config = SearchConfig(query="", mode="both", threshold=0, limit=200, case_sensitive=False, wildcards=False)
         results = search(entries, config)
         assert len(results) == 0
+
+
+class TestNormalizeForMatching:
+    def test_strips_inline_tags(self):
+        assert normalize_for_matching("Press <color>Start</color>") == "Press Start"
+
+    def test_strips_variables(self):
+        assert normalize_for_matching("{player_name} won {0} gold") == "won gold"
+
+    def test_collapses_whitespace(self):
+        assert normalize_for_matching("hello   world") == "hello world"
+
+    def test_strips_trailing_punctuation(self):
+        assert normalize_for_matching("Continue...") == "Continue"
+        assert normalize_for_matching("확인!") == "확인"
+
+    def test_combined_normalization(self):
+        assert normalize_for_matching("<b>{0}개</b> 획득!") == "개 획득"
+
+    def test_empty_and_plain(self):
+        assert normalize_for_matching("") == ""
+        assert normalize_for_matching("plain text") == "plain text"
+
+
+class TestFuzzyScoreWithNormalization:
+    def test_tags_dont_inflate_score(self):
+        """Two strings identical except for different tags should score high."""
+        score = fuzzy_score(
+            "<color>시작하기</color>",
+            "<Text_Yellow02>시작하기</Text_Yellow02>",
+        )
+        assert score == 100
+
+    def test_variables_dont_deflate_score(self):
+        """Strings differing only in variable names should score high."""
+        score = fuzzy_score("{player_name}의 승리", "{0}의 승리")
+        assert score == 100
+
+    def test_trailing_punctuation_ignored(self):
+        score = fuzzy_score("계속하시겠습니까?", "계속하시겠습니까")
+        assert score == 100
